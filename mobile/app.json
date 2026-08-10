@@ -1,0 +1,50 @@
+{
+  "expo": {
+    "name": "轻脂管家",
+    "slug": "qingzhi-fat-loss-helper",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "scheme": "qingzhi",
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.qingzhi.fatlosshelper",
+      "permissions": [
+        "android.permission.SCHEDULE_EXACT_ALARM"
+      ],
+      "adaptiveIcon": {
+        "backgroundColor": "#DCEBDD",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": true
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-sqlite",
+      "expo-secure-store",
+      "expo-background-task",
+      [
+        "expo-notifications",
+        {
+          "color": "#2F7D5A",
+          "defaultChannel": "healthy-reminders"
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true,
+            "useDayNightTheme": true
+          }
+        }
+      ]
+    ]
+  }
+}

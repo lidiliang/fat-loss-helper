@@ -1,0 +1,8 @@
+.env
+.DS_Store
+.idea/
+mobile/.expo/
+mobile/dist/
+server/qingzhi-api
+server/bin/
+artifacts/*.apk

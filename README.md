@@ -1,0 +1,146 @@
+# 轻脂管家
+
+面向个人减脂与脂肪肝生活方式管理的 Android 优先应用。移动端使用 Expo/React Native，离线数据存储在 SQLite；Go API 负责账号登录和按用户隔离的 PostgreSQL 云端备份。
+
+> 本应用提供记录、估算和生活方式建议，不进行疾病诊断，也不能替代医生或营养师的诊疗意见。
+
+## 已实现功能
+
+- 邮箱注册/登录，bcrypt 密码哈希和 30 天 JWT 会话
+- 同一设备多账号本地数据隔离，断网后已登录用户仍可记录
+- Mifflin–St Jeor 公式、活动系数、减重缺口与安全热量下限
+- 30 种常见中式食物、自定义食物、餐次选择和克数计算
+- 3 个内置减脂套餐、把已记录餐次保存为常用组合
+- 今日热量与三大营养素预算、净热量、下一餐动态建议
+- 快走、跑步、骑行、游泳等 MET 运动消耗估算
+- 体重/腰围打卡、体重折线和近 30 天摄入达标率
+- 餐前 30 分钟、运动前 1 小时的本地通知
+- 每 6 小时系统后台备份、切后台备份、手动备份与显式恢复
+- 暖白＋绿色界面，自动跟随安卓深色模式
+
+## 目录
+
+```text
+mobile/                 Expo SDK 57 React Native 应用
+server/                 Go + Gin API
+server/cmd/api/migrations/  PostgreSQL 表结构
+scripts/smoke-api.sh    注册、登录、备份、恢复冒烟测试
+docker-compose.yml      PostgreSQL 和 API 本地编排
+```
+
+## 环境要求
+
+- Node.js `24.3+`（或 `22.13+`）与 npm
+- Expo Go，或 Android Studio/Android SDK
+- Go `1.24+`
+- Docker Desktop/Colima 与 Docker Compose
+
+## 本地启动
+
+### 1. 启动服务端
+
+推荐直接使用 Compose：
+
+```bash
+export JWT_SECRET="请替换为至少32位的随机字符串"
+docker compose up --build -d
+```
+
+如果本机使用独立的 `docker-compose` 命令，或 buildx 版本较旧：
+
+```bash
+docker-compose up -d postgres
+cd server
+DATABASE_URL='postgres://qingzhi:qingzhi@127.0.0.1:5432/qingzhi?sslmode=disable' \
+JWT_SECRET='development-only-change-me-please' \
+go run ./cmd/api
+```
+
+健康检查地址为 `http://127.0.0.1:8080/health`。
+
+### 2. 启动 Android 应用
+
+```bash
+cd mobile
+npm install
+npm start
+```
+
+- Android 模拟器默认通过 `http://10.0.2.2:8080/api/v1` 访问电脑。
+- Expo Go 真机调试时，应用会优先从 Expo 开发地址推断电脑的局域网 IP。
+- 如果自动推断不适用，请显式设置：
+
+```bash
+EXPO_PUBLIC_API_URL='http://你的电脑局域网IP:8080/api/v1' npm start
+```
+
+手机和电脑需要位于同一局域网，电脑防火墙需允许 `8080` 端口。生产部署必须使用 HTTPS：
+
+```bash
+EXPO_PUBLIC_API_URL='https://api.example.com/api/v1' npm start
+```
+
+## APK 构建
+
+### 不使用 Expo 账号：本地构建
+
+本地已安装 Android Studio/SDK 时，可直接执行：
+
+```bash
+make apk
+```
+
+生成文件位于 `artifacts/qingzhi-fatlosshelper-debug.apk`。这是方便真机试用的调试包，不需要 Expo、Google 或开发者账号。
+
+### 使用 Expo 账号：EAS 云端构建
+
+Expo 账号是 Expo 官方云构建服务 EAS 的账号，不是 Android 或 Google 账号。它的作用是让 Expo 云服务器代替本机生成 APK/AAB；运行 Expo Go 和本地构建都不需要它。需要云构建时可在 <https://expo.dev/signup> 免费注册。
+
+项目已经在 [mobile/eas.json](./mobile/eas.json) 中配置 `preview` APK：
+
+```bash
+cd mobile
+npx eas-cli@latest login
+npx eas-cli@latest build --platform android --profile preview
+```
+
+也可以在已安装 Android SDK 的电脑上生成本地原生工程：
+
+```bash
+cd mobile
+npx expo run:android --variant release
+```
+
+应用包名为 `com.qingzhi.fatlosshelper`。本地通知在 Expo Go 中可用；独立安装包能获得完整的后台任务和通知配置。
+
+## 数据备份规则
+
+- SQLite 是离线工作副本，所有表均带账号标识。
+- 变更发生后标记为待备份；Android WorkManager 最早每 6 小时尝试一次。
+- 系统会根据电量、网络和厂商后台策略延后任务，因此设置页保留“立即备份”。
+- 服务端从 JWT 获取用户身份，不接受客户端指定其他用户 ID。
+- 每个账号保留最近 30 份 JSONB 快照，单份最大 5 MB。
+- “从云端恢复”会替换当前账号的本机数据，应用会在操作前再次确认。
+
+健康数据较敏感。正式部署时应使用 HTTPS、强随机 `JWT_SECRET`、独立数据库密码、磁盘加密和定期 PostgreSQL 备份。
+当前预览配置为局域网调试开启了 Android 明文 HTTP；生产打包前应在 `mobile/app.json` 的 `expo-build-properties.android.usesCleartextTraffic` 中改为 `false`。
+
+## 验证
+
+```bash
+cd mobile && npm run typecheck
+cd server && go test ./...
+cd mobile && npm run export:android
+./scripts/smoke-api.sh
+```
+
+最后一项要求 API 已在 `127.0.0.1:8080` 运行。
+
+## 关键算法
+
+- 男性 BMR：`10×体重 + 6.25×身高 - 5×年龄 + 5`
+- 女性 BMR：`10×体重 + 6.25×身高 - 5×年龄 - 161`
+- TDEE：`BMR × 活动系数`
+- 减重热量缺口：`每周目标kg × 7700 ÷ 7`，同时限制在 TDEE 的 30% 内
+- 热量安全下限：男性 1500 kcal、女性 1200 kcal
+- 运动消耗：`MET × 体重kg × 时长小时`

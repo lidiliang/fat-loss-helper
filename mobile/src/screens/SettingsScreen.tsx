@@ -1,0 +1,239 @@
+import { Ionicons } from '@expo/vector-icons';
+import { useEffect, useState } from 'react';
+import { Alert, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import { AppText, Card, Chip, Field, Header, PrimaryButton, Screen, SectionTitle } from '../components/ui';
+import { ACTIVITY_LEVELS } from '../data/seed';
+import { calculateGoals } from '../lib/calculations';
+import { API_URL } from '../lib/api';
+import { getSyncStatus } from '../lib/database';
+import { backupNow, restoreLatestBackup } from '../lib/sync';
+import { useAuth } from '../context/AuthContext';
+import { useApp } from '../context/AppContext';
+import { ActivityLevel, Gender, ReminderSettings } from '../types';
+import { useColors } from '../theme';
+
+export function SettingsScreen() {
+  const colors = useColors();
+  const { user, logout } = useAuth();
+  const app = useApp();
+  const profile = app.profile;
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [backupLoading, setBackupLoading] = useState(false);
+  const [restoreLoading, setRestoreLoading] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<{ dirty: number; lastBackupAt: string | null; lastError: string | null } | null>(null);
+
+  const refreshStatus = () => {
+    if (user) getSyncStatus(user.id).then(setSyncStatus).catch(() => undefined);
+  };
+  useEffect(refreshStatus, [user]);
+
+  const performBackup = async () => {
+    setBackupLoading(true);
+    try {
+      await backupNow(true);
+      refreshStatus();
+      Alert.alert('备份完成', '当前账号的数据已安全备份到服务端。');
+    } catch (error) {
+      Alert.alert('备份失败', error instanceof Error ? error.message : '请检查网络和服务端状态');
+    } finally { setBackupLoading(false); }
+  };
+
+  const confirmRestore = () => Alert.alert(
+    '从云端恢复？',
+    '恢复会用此账号最近一次云端备份替换本机当前数据。建议先执行一次立即备份。',
+    [
+      { text: '取消', style: 'cancel' },
+      { text: '确认恢复', style: 'destructive', onPress: async () => {
+        setRestoreLoading(true);
+        try {
+          await restoreLatestBackup();
+          await app.refresh();
+          refreshStatus();
+          Alert.alert('恢复完成', '已载入最近一次云端备份。');
+        } catch (error) {
+          Alert.alert('恢复失败', error instanceof Error ? error.message : '请稍后重试');
+        } finally { setRestoreLoading(false); }
+      } },
+    ],
+  );
+
+  if (!profile || !app.reminders || !user) return null;
+  const lastBackup = syncStatus?.lastBackupAt ? new Date(syncStatus.lastBackupAt).toLocaleString('zh-CN') : '尚未完成备份';
+
+  return (
+    <Screen>
+      <Header eyebrow="我的" title="设置与数据" subtitle="目标、提醒和备份都由你掌控。" />
+
+      <Card style={styles.accountCard}>
+        <View style={[styles.accountAvatar, { backgroundColor: colors.primarySoft }]}><Text style={{ fontSize: 24 }}>🌿</Text></View>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.accountName, { color: colors.text }]}>{profile.name}</Text>
+          <Text style={[styles.accountEmail, { color: colors.textMuted }]}>{user.email}</Text>
+        </View>
+        <Pressable onPress={() => setProfileOpen(value => !value)}>
+          <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '800' }}>{profileOpen ? '收起' : '编辑档案'}</Text>
+        </Pressable>
+      </Card>
+
+      {profileOpen ? <ProfileEditor onDone={() => setProfileOpen(false)} /> : (
+        <View style={styles.goalTiles}>
+          <GoalTile label="热量目标" value={`${profile.calorieGoal} kcal`} />
+          <GoalTile label="目标体重" value={`${profile.targetWeightKg} kg`} />
+        </View>
+      )}
+
+      <SectionTitle title="本地提醒" />
+      <ReminderEditor settings={app.reminders} />
+
+      <SectionTitle title="数据备份" />
+      <Card style={{ gap: 15 }}>
+        <View style={styles.settingRow}>
+          <View style={[styles.settingIcon, { backgroundColor: colors.primarySoft }]}><Ionicons name="cloud-done-outline" size={20} color={colors.primary} /></View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.settingTitle, { color: colors.text }]}>云端账号备份</Text>
+            <Text style={[styles.settingDetail, { color: colors.textMuted }]}>{syncStatus?.dirty ? '有尚未备份的本地变更' : lastBackup}</Text>
+          </View>
+          <View style={[styles.statusDot, { backgroundColor: syncStatus?.dirty ? colors.orange : colors.primary }]} />
+        </View>
+        {syncStatus?.lastError ? <Text style={[styles.errorBox, { color: colors.red, backgroundColor: `${colors.red}12` }]}>{syncStatus.lastError}</Text> : null}
+        <View style={styles.buttonRow}>
+          <View style={{ flex: 1 }}><PrimaryButton label="立即备份" onPress={performBackup} loading={backupLoading} /></View>
+          <View style={{ flex: 1 }}><PrimaryButton label="从云端恢复" onPress={confirmRestore} loading={restoreLoading} secondary /></View>
+        </View>
+        <AppText muted style={styles.backupNote}>安卓系统会在网络、电量条件允许时约每 6 小时尝试后台备份；切换到后台时也会尝试同步。系统可能延后执行，重要变更可手动备份。</AppText>
+        <View style={[styles.serverBox, { backgroundColor: colors.surfaceMuted }]}>
+          <Text style={[styles.serverLabel, { color: colors.textMuted }]}>服务地址</Text>
+          <Text selectable style={[styles.serverValue, { color: colors.text }]}>{API_URL}</Text>
+        </View>
+      </Card>
+
+      <SectionTitle title="显示与说明" />
+      <Card style={{ gap: 14 }}>
+        <View style={styles.settingRow}>
+          <View style={[styles.settingIcon, { backgroundColor: colors.surfaceMuted }]}><Ionicons name="moon-outline" size={20} color={colors.text} /></View>
+          <View style={{ flex: 1 }}><Text style={[styles.settingTitle, { color: colors.text }]}>深色模式</Text><Text style={[styles.settingDetail, { color: colors.textMuted }]}>自动跟随安卓系统</Text></View>
+        </View>
+        <View style={[styles.divider, { backgroundColor: colors.border }]} />
+        <AppText muted style={styles.medicalNote}>轻脂管家提供记录、估算与生活方式建议，不进行疾病诊断。脂肪肝患者如出现不适或需调整治疗方案，请咨询医生。</AppText>
+      </Card>
+
+      <PrimaryButton label="退出当前账号" secondary onPress={() => Alert.alert('退出登录？', '本机数据会保留并继续按账号隔离。下次登录后可继续使用。', [
+        { text: '取消', style: 'cancel' },
+        { text: '退出', style: 'destructive', onPress: () => logout() },
+      ])} />
+      <AppText muted style={{ textAlign: 'center', fontSize: 10 }}>轻脂管家 v1.0.0 · com.qingzhi.fatlosshelper</AppText>
+    </Screen>
+  );
+}
+
+function ProfileEditor({ onDone }: { onDone: () => void }) {
+  const colors = useColors();
+  const app = useApp();
+  const profile = app.profile!;
+  const [gender, setGender] = useState<Gender>(profile.gender);
+  const [age, setAge] = useState(String(profile.age));
+  const [height, setHeight] = useState(String(profile.heightCm));
+  const [weight, setWeight] = useState(String(profile.weightKg));
+  const [waist, setWaist] = useState(String(profile.waistCm));
+  const [targetWeight, setTargetWeight] = useState(String(profile.targetWeightKg));
+  const [weeklyLoss, setWeeklyLoss] = useState(String(profile.weeklyLossKg));
+  const [activity, setActivity] = useState<ActivityLevel>(profile.activityLevel);
+  const [saving, setSaving] = useState(false);
+  const submit = async () => {
+    if ([age, height, weight, waist, targetWeight].some(value => Number(value) <= 0)) return Alert.alert('请检查输入');
+    const goals = calculateGoals({ gender, age: Number(age), heightCm: Number(height), weightKg: Number(weight), activityLevel: activity, weeklyLossKg: Number(weeklyLoss) });
+    setSaving(true);
+    try {
+      await app.saveProfile({
+        ...profile, gender, age: Number(age), heightCm: Number(height), weightKg: Number(weight), waistCm: Number(waist),
+        targetWeightKg: Number(targetWeight), weeklyLossKg: Number(weeklyLoss), activityLevel: activity,
+        calorieGoal: goals.calorieGoal, proteinGoal: goals.proteinGoal, fatGoal: goals.fatGoal, carbGoal: goals.carbGoal,
+        updatedAt: new Date().toISOString(),
+      });
+      onDone();
+      Alert.alert('目标已更新', `新的每日热量目标为 ${goals.calorieGoal} kcal。`);
+    } finally { setSaving(false); }
+  };
+  return (
+    <Card style={{ gap: 15 }}>
+      <View style={styles.chipRow}><Chip label="男性" selected={gender === 'male'} onPress={() => setGender('male')} /><Chip label="女性" selected={gender === 'female'} onPress={() => setGender('female')} /></View>
+      <View style={styles.buttonRow}><Field label="年龄" value={age} onChangeText={setAge} keyboardType="number-pad" suffix="岁" /><Field label="身高" value={height} onChangeText={setHeight} keyboardType="decimal-pad" suffix="cm" /></View>
+      <View style={styles.buttonRow}><Field label="体重" value={weight} onChangeText={setWeight} keyboardType="decimal-pad" suffix="kg" /><Field label="腰围" value={waist} onChangeText={setWaist} keyboardType="decimal-pad" suffix="cm" /></View>
+      <View style={styles.buttonRow}><Field label="目标体重" value={targetWeight} onChangeText={setTargetWeight} keyboardType="decimal-pad" suffix="kg" /><Field label="每周减重" value={weeklyLoss} onChangeText={setWeeklyLoss} keyboardType="decimal-pad" suffix="kg" /></View>
+      <AppText muted style={{ fontSize: 11, fontWeight: '700' }}>活动水平</AppText>
+      <View style={styles.chipRow}>{ACTIVITY_LEVELS.map(item => <Chip key={item.value} label={item.label} selected={activity === item.value} onPress={() => setActivity(item.value)} small />)}</View>
+      <View style={[styles.infoBox, { backgroundColor: colors.primarySoft }]}><Text style={{ color: colors.primaryDark, fontSize: 11 }}>保存后将使用 Mifflin–St Jeor 公式重新计算目标。</Text></View>
+      <PrimaryButton label="重新计算并保存" onPress={submit} loading={saving} />
+    </Card>
+  );
+}
+
+function ReminderEditor({ settings }: { settings: ReminderSettings }) {
+  const colors = useColors();
+  const app = useApp();
+  const [draft, setDraft] = useState(settings);
+  const [saving, setSaving] = useState(false);
+  const days = [{ v: 1, l: '一' }, { v: 2, l: '二' }, { v: 3, l: '三' }, { v: 4, l: '四' }, { v: 5, l: '五' }, { v: 6, l: '六' }, { v: 0, l: '日' }];
+  const save = async () => {
+    const values = [draft.breakfast, draft.lunch, draft.dinner, draft.snack, draft.exercise];
+    if (values.some(value => !/^([01]\d|2[0-3]):[0-5]\d$/.test(value))) return Alert.alert('时间格式不正确', '请使用 07:30 这样的 24 小时格式。');
+    setSaving(true);
+    try {
+      const next = { ...draft, updatedAt: new Date().toISOString() };
+      await app.saveReminders(next);
+      Alert.alert('提醒已更新', next.enabled ? '新的本地提醒已安排。' : '所有本地提醒已关闭。');
+    } catch (error) {
+      Alert.alert('无法设置提醒', error instanceof Error ? error.message : '请检查系统通知权限');
+    } finally { setSaving(false); }
+  };
+  return (
+    <Card style={{ gap: 15 }}>
+      <View style={styles.settingRow}>
+        <View style={[styles.settingIcon, { backgroundColor: colors.primarySoft }]}><Ionicons name="notifications-outline" size={20} color={colors.primary} /></View>
+        <View style={{ flex: 1 }}><Text style={[styles.settingTitle, { color: colors.text }]}>启用饮食与运动提醒</Text><Text style={[styles.settingDetail, { color: colors.textMuted }]}>餐前 30 分钟，运动前 1 小时</Text></View>
+        <Switch value={draft.enabled} onValueChange={enabled => setDraft({ ...draft, enabled })} trackColor={{ false: colors.border, true: colors.primarySoft }} thumbColor={draft.enabled ? colors.primary : colors.textMuted} />
+      </View>
+      {draft.enabled ? (
+        <>
+          <View style={styles.buttonRow}><Field label="早餐" value={draft.breakfast} onChangeText={breakfast => setDraft({ ...draft, breakfast })} keyboardType="numbers-and-punctuation" /><Field label="午餐" value={draft.lunch} onChangeText={lunch => setDraft({ ...draft, lunch })} keyboardType="numbers-and-punctuation" /></View>
+          <View style={styles.buttonRow}><Field label="晚餐" value={draft.dinner} onChangeText={dinner => setDraft({ ...draft, dinner })} keyboardType="numbers-and-punctuation" /><Field label="加餐" value={draft.snack} onChangeText={snack => setDraft({ ...draft, snack })} keyboardType="numbers-and-punctuation" /></View>
+          <Field label="运动计划时间" value={draft.exercise} onChangeText={exercise => setDraft({ ...draft, exercise })} keyboardType="numbers-and-punctuation" />
+          <AppText muted style={{ fontSize: 11, fontWeight: '700' }}>运动日</AppText>
+          <View style={styles.chipRow}>{days.map(day => <Chip key={day.v} label={`周${day.l}`} small selected={draft.exerciseDays.includes(day.v)} onPress={() => setDraft({ ...draft, exerciseDays: draft.exerciseDays.includes(day.v) ? draft.exerciseDays.filter(v => v !== day.v) : [...draft.exerciseDays, day.v] })} />)}</View>
+        </>
+      ) : null}
+      <PrimaryButton label="保存提醒设置" onPress={save} loading={saving} />
+    </Card>
+  );
+}
+
+function GoalTile({ label, value }: { label: string; value: string }) {
+  const colors = useColors();
+  return <View style={[styles.goalTile, { backgroundColor: colors.surface, borderColor: colors.border }]}><Text style={[styles.goalLabel, { color: colors.textMuted }]}>{label}</Text><Text style={[styles.goalValue, { color: colors.text }]}>{value}</Text></View>;
+}
+
+const styles = StyleSheet.create({
+  accountCard: { flexDirection: 'row', alignItems: 'center', gap: 13 },
+  accountAvatar: { width: 50, height: 50, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
+  accountName: { fontSize: 17, fontWeight: '900' },
+  accountEmail: { fontSize: 11, marginTop: 4 },
+  goalTiles: { flexDirection: 'row', gap: 10 },
+  goalTile: { flex: 1, borderWidth: 1, borderRadius: 17, padding: 15, gap: 5 },
+  goalLabel: { fontSize: 10, fontWeight: '700' },
+  goalValue: { fontSize: 18, fontWeight: '900' },
+  settingRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  settingIcon: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  settingTitle: { fontSize: 13, fontWeight: '800' },
+  settingDetail: { fontSize: 10, marginTop: 4 },
+  statusDot: { width: 10, height: 10, borderRadius: 5 },
+  buttonRow: { flexDirection: 'row', gap: 10 },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
+  backupNote: { fontSize: 10, lineHeight: 16 },
+  serverBox: { borderRadius: 13, padding: 12, gap: 4 },
+  serverLabel: { fontSize: 9, fontWeight: '700' },
+  serverValue: { fontSize: 10 },
+  errorBox: { padding: 11, borderRadius: 12, fontSize: 10, lineHeight: 15 },
+  divider: { height: StyleSheet.hairlineWidth },
+  medicalNote: { fontSize: 10, lineHeight: 17 },
+  infoBox: { padding: 12, borderRadius: 13 },
+});

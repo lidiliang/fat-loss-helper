@@ -1,0 +1,35 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: qingzhi
+      POSTGRES_USER: qingzhi
+      POSTGRES_PASSWORD: qingzhi
+    volumes:
+      - qingzhi_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U qingzhi -d qingzhi"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    ports:
+      - "5432:5432"
+
+  api:
+    build: ./server
+    restart: unless-stopped
+    environment:
+      GIN_MODE: release
+      PORT: "8080"
+      DATABASE_URL: postgres://qingzhi:qingzhi@postgres:5432/qingzhi?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:-replace-this-with-a-random-secret-of-at-least-32-characters}
+      ALLOW_ORIGIN: "*"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+
+volumes:
+  qingzhi_postgres:
