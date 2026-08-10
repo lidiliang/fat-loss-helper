@@ -14,22 +14,29 @@ services:
       timeout: 3s
       retries: 10
     ports:
-      - "5432:5432"
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
 
   api:
+    image: "${API_IMAGE:-fat-loss-helper-api:latest}"
     build: ./server
     restart: unless-stopped
     environment:
       GIN_MODE: release
       PORT: "8080"
       DATABASE_URL: postgres://qingzhi:qingzhi@postgres:5432/qingzhi?sslmode=disable
-      JWT_SECRET: ${JWT_SECRET:-replace-this-with-a-random-secret-of-at-least-32-characters}
+      JWT_SECRET: ${JWT_SECRET:?请先设置至少32位的JWT_SECRET}
       ALLOW_ORIGIN: "*"
     depends_on:
       postgres:
         condition: service_healthy
     ports:
       - "8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
 
 volumes:
   qingzhi_postgres:

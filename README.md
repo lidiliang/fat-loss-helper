@@ -37,26 +37,79 @@ docker-compose.yml      PostgreSQL 和 API 本地编排
 
 ## 本地启动
 
-### 1. 启动服务端
+### 1. 使用 Docker 启动服务端
 
-推荐直接使用 Compose：
+#### 推荐：Docker Compose 一键启动
+
+Compose 会构建 `fat-loss-helper-api:latest` 后端镜像，同时启动 PostgreSQL。PostgreSQL 容器端口为 `5432`，映射到宿主机 `5433`，避免与本机 PostgreSQL 冲突。
 
 ```bash
-export JWT_SECRET="请替换为至少32位的随机字符串"
-docker compose up --build -d
+export JWT_SECRET="$(openssl rand -hex 32)"
+docker-compose up --build -d
+docker-compose ps
 ```
 
-如果本机使用独立的 `docker-compose` 命令，或 buildx 版本较旧：
+查看日志和检查 API：
 
 ```bash
-docker-compose up -d postgres
+docker-compose logs -f api
+curl http://127.0.0.1:8080/health
+```
+
+正常响应为 `{"status":"ok"}`。停止服务不会删除数据库数据：
+
+```bash
+docker-compose down
+```
+
+不要执行 `docker-compose down -v`，该命令会删除 PostgreSQL 数据卷。
+
+#### 分别使用 `docker run` 启动
+
+以下命令与 Compose 方式二选一，不要同时启动两套容器。如果网络已经存在，`docker network create` 无需重复执行。
+
+先创建专用网络和 PostgreSQL 容器：
+
+```bash
+docker network create qingzhi-network
+docker run -d \
+  --name qingzhi-postgres \
+  --restart unless-stopped \
+  --network qingzhi-network \
+  -e POSTGRES_DB=qingzhi \
+  -e POSTGRES_USER=qingzhi \
+  -e POSTGRES_PASSWORD=qingzhi \
+  -p 5433:5432 \
+  -v qingzhi_postgres_data:/var/lib/postgresql/data \
+  postgres:17-alpine
+```
+
+构建并启动后端镜像：
+
+```bash
+docker build -t fat-loss-helper-api:latest ./server
+export JWT_SECRET="$(openssl rand -hex 32)"
+docker run -d \
+  --name qingzhi-api \
+  --restart unless-stopped \
+  --network qingzhi-network \
+  -e DATABASE_URL='postgres://qingzhi:qingzhi@qingzhi-postgres:5432/qingzhi?sslmode=disable' \
+  -e JWT_SECRET="$JWT_SECRET" \
+  -e ALLOW_ORIGIN='*' \
+  -p 8080:8080 \
+  fat-loss-helper-api:latest
+```
+
+容器之间通过 `qingzhi-network` 通信，因此 API 使用数据库容器名 `qingzhi-postgres:5432`，不能写成 `127.0.0.1:5433`。后者只用于从宿主机直接访问数据库。
+
+如果需要在宿主机使用 `go run` 调试后端：
+
+```bash
 cd server
-DATABASE_URL='postgres://qingzhi:qingzhi@127.0.0.1:5432/qingzhi?sslmode=disable' \
+DATABASE_URL='postgres://qingzhi:qingzhi@127.0.0.1:5433/qingzhi?sslmode=disable' \
 JWT_SECRET='development-only-change-me-please' \
 go run ./cmd/api
 ```
-
-健康检查地址为 `http://127.0.0.1:8080/health`。
 
 ### 2. 启动 Android 应用
 
