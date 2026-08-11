@@ -1,14 +1,16 @@
 import { AppState } from 'react-native';
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { BUILT_IN_TEMPLATES } from '../data/seed';
+import { BUILT_IN_TEMPLATES, MEAL_LABELS } from '../data/seed';
 import { calculateExerciseCalories, calculateFoodNutrition, dateKey, randomId, summarizeDay } from '../lib/calculations';
 import {
   deleteCustomFood as deleteCustomFoodDb,
   deleteExercise as deleteExerciseDb,
   deleteMeal as deleteMealDb,
+  deleteTemplate as deleteTemplateDb,
   getExercises,
   getDailyIntakes,
   getFoods,
+  getHiddenTemplateIds,
   getMeals,
   getProfile,
   getReminders,
@@ -55,6 +57,7 @@ interface AppValue {
   saveProfile: (profile: UserProfile) => Promise<void>;
   addMeal: (food: FoodItem, weightG: number, mealType: MealType, portionLabel?: string | null) => Promise<void>;
   addTemplate: (template: MealTemplate, mealType: MealType) => Promise<void>;
+  deleteTemplate: (template: MealTemplate) => Promise<void>;
   deleteMeal: (id: string) => Promise<void>;
   addExercise: (type: string, met: number, durationMin: number, distanceKm?: number) => Promise<void>;
   deleteExercise: (id: string) => Promise<void>;
@@ -83,13 +86,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(async () => {
     if (!user) return;
-    const [nextProfile, nextFoods, nextMeals, nextExercises, nextWeights, customTemplates, nextReminders, nextDailyIntakes] = await Promise.all([
+    const [nextProfile, nextFoods, nextMeals, nextExercises, nextWeights, customTemplates, hiddenTemplateIds, nextReminders, nextDailyIntakes] = await Promise.all([
       getProfile(user.id),
       getFoods(user.id),
       getMeals(user.id, selectedDate),
       getExercises(user.id, selectedDate),
       getWeightRecords(user.id),
       getTemplates(user.id),
+      getHiddenTemplateIds(user.id),
       getReminders(user.id),
       getDailyIntakes(user.id),
     ]);
@@ -98,7 +102,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setMeals(nextMeals);
     setExercises(nextExercises);
     setWeights(nextWeights);
-    setTemplates([...customTemplates, ...BUILT_IN_TEMPLATES]);
+    const hidden = new Set(hiddenTemplateIds);
+    setTemplates([...customTemplates, ...BUILT_IN_TEMPLATES.filter(template => !hidden.has(template.id))]);
     setRemindersState(nextReminders);
     setDailyIntakes(nextDailyIntakes);
     setLoading(false);
@@ -153,6 +158,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     },
     addTemplate: async (template, mealType) => {
       const owner = ensureUser();
+      if (meals.some(item => item.mealType === mealType && item.sourceTemplateId === template.id)) {
+        throw new Error(`“${template.name}”已经添加到${MEAL_LABELS[mealType]}，如需重新添加请先删除该组合的已有记录。`);
+      }
       const now = new Date().toISOString();
       const recordedAt = `${selectedDate}T12:00:00`;
       for (const item of template.items) {
@@ -161,9 +169,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const nutrition = calculateFoodNutrition(food, item.weightG);
         await saveMeal({
           id: randomId('meal'), ownerId: owner.id, mealType, foodId: food.id, foodName: food.name,
-          weightG: item.weightG, ...nutrition, recordedAt, updatedAt: now,
+          weightG: item.weightG, sourceTemplateId: template.id, ...nutrition, recordedAt, updatedAt: now,
         }, selectedDate);
       }
+      await refresh();
+    },
+    deleteTemplate: async template => {
+      const owner = ensureUser();
+      await deleteTemplateDb(template, owner.id);
       await refresh();
     },
     deleteMeal: async id => {

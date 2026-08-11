@@ -81,8 +81,8 @@ export function summarizeDay(meals: MealRecord[], exercises: ExerciseRecord[]): 
   return { ...eaten, burned, netCalories: eaten.calories - burned };
 }
 
-export function getMealRecommendation(profile: UserProfile, summary: DailySummary, completedMealCount: number) {
-  const remainingMeals = Math.max(1, 4 - completedMealCount);
+export function getMealRecommendation(profile: UserProfile, summary: DailySummary, completedMealCount: number, plannedMealCount = 4) {
+  const remainingMeals = Math.max(1, plannedMealCount - completedMealCount);
   const calories = Math.max(0, Math.round((profile.calorieGoal - summary.calories) / remainingMeals));
   const fat = Math.max(0, Math.round((profile.fatGoal - summary.fat) / remainingMeals));
   const protein = Math.max(0, Math.round((profile.proteinGoal - summary.protein) / remainingMeals));

@@ -1,4 +1,4 @@
-import { ReactNode } from 'react';
+import { ReactNode, RefObject } from 'react';
 import {
   ActivityIndicator,
   KeyboardTypeOptions,
@@ -15,10 +15,15 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useColors } from '../theme';
 
-export function Screen({ children, scroll = true, style }: { children: ReactNode; scroll?: boolean; style?: StyleProp<ViewStyle> }) {
+export function Screen({ children, scroll = true, style, scrollRef }: {
+  children: ReactNode;
+  scroll?: boolean;
+  style?: StyleProp<ViewStyle>;
+  scrollRef?: RefObject<ScrollView | null>;
+}) {
   const colors = useColors();
   const body = scroll ? (
-    <ScrollView contentContainerStyle={[styles.screenContent, style]} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+    <ScrollView ref={scrollRef} contentContainerStyle={[styles.screenContent, style]} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
       {children}
     </ScrollView>
   ) : (

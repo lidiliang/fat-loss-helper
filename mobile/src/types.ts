@@ -53,6 +53,7 @@ export interface MealRecord {
   foodName: string;
   weightG: number;
   portionLabel?: string | null;
+  sourceTemplateId?: string | null;
   calories: number;
   protein: number;
   fat: number;
@@ -134,6 +135,7 @@ export interface BackupSnapshot {
   exercises: ExerciseRecord[];
   weights: WeightRecord[];
   templates: MealTemplate[];
+  hiddenTemplateIds?: string[];
   reminders: ReminderSettings | null;
 }
 

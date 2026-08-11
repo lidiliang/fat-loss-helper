@@ -19,6 +19,21 @@
 - 每 6 小时系统后台备份、切后台备份、手动备份与显式恢复
 - 暖白＋绿色界面，自动跟随安卓深色模式
 
+## 应用截图
+
+点击缩略图可查看完整尺寸截图。
+
+<table>
+  <tr>
+    <td align="center"><a href="docs/screenshots/dashboard.jpg"><img src="docs/screenshots/dashboard.jpg" width="260" alt="首页仪表盘" /></a><br />首页仪表盘</td>
+    <td align="center"><a href="docs/screenshots/record.jpg"><img src="docs/screenshots/record.jpg" width="260" alt="饮食记录" /></a><br />饮食记录</td>
+  </tr>
+  <tr>
+    <td align="center"><a href="docs/screenshots/trends.jpg"><img src="docs/screenshots/trends.jpg" width="260" alt="趋势与复盘" /></a><br />趋势与复盘</td>
+    <td align="center"><a href="docs/screenshots/settings.jpg"><img src="docs/screenshots/settings.jpg" width="260" alt="设置与数据" /></a><br />设置与数据</td>
+  </tr>
+</table>
+
 ## 目录
 
 ```text

@@ -4,16 +4,19 @@ import { Card, Header, PrimaryButton, ProgressBar, Screen, SectionTitle } from '
 import { FATTY_LIVER_LEVELS, MEAL_LABELS } from '../data/seed';
 import { calculateGoals, dateKey, getMealRecommendation, getSaturatedFatLimit } from '../lib/calculations';
 import { useApp } from '../context/AppContext';
-import { RootTab } from '../types';
+import { MealType, RootTab } from '../types';
 import { useColors } from '../theme';
 
 export function DashboardScreen({ onNavigate }: { onNavigate: (tab: RootTab) => void }) {
   const colors = useColors();
-  const { profile, meals, exercises, summary, selectedDate } = useApp();
+  const { profile, meals, exercises, summary, selectedDate, reminders } = useApp();
   if (!profile) return null;
 
-  const mealCount = new Set(meals.map(item => item.mealType)).size;
-  const recommendation = getMealRecommendation(profile, summary, mealCount);
+  const plannedMealTypes: MealType[] = reminders?.snack.trim()
+    ? ['breakfast', 'lunch', 'dinner', 'snack']
+    : ['breakfast', 'lunch', 'dinner'];
+  const mealCount = new Set(meals.filter(item => plannedMealTypes.includes(item.mealType)).map(item => item.mealType)).size;
+  const recommendation = getMealRecommendation(profile, summary, mealCount, plannedMealTypes.length);
   const goalComparison = calculateGoals({
     gender: profile.gender,
     age: profile.age,

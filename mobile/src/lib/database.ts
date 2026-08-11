@@ -57,6 +57,7 @@ export async function initDatabase() {
       food_name TEXT NOT NULL,
       weight_g REAL NOT NULL,
       portion_label TEXT,
+      source_template_id TEXT,
       calories REAL NOT NULL,
       protein REAL NOT NULL,
       fat REAL NOT NULL,
@@ -97,6 +98,11 @@ export async function initDatabase() {
       built_in INTEGER NOT NULL DEFAULT 0
     );
     CREATE INDEX IF NOT EXISTS idx_template_owner ON meal_templates(owner_id);
+    CREATE TABLE IF NOT EXISTS hidden_templates (
+      owner_id TEXT NOT NULL,
+      template_id TEXT NOT NULL,
+      PRIMARY KEY (owner_id, template_id)
+    );
     CREATE TABLE IF NOT EXISTS reminder_settings (
       owner_id TEXT PRIMARY KEY NOT NULL,
       enabled INTEGER NOT NULL,
@@ -125,6 +131,9 @@ export async function initDatabase() {
   const mealColumns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(meal_records)');
   if (!mealColumns.some(column => column.name === 'portion_label')) {
     await db.execAsync('ALTER TABLE meal_records ADD COLUMN portion_label TEXT');
+  }
+  if (!mealColumns.some(column => column.name === 'source_template_id')) {
+    await db.execAsync('ALTER TABLE meal_records ADD COLUMN source_template_id TEXT');
   }
   const profileColumns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(profiles)');
   if (!profileColumns.some(column => column.name === 'fatty_liver_level')) {
@@ -248,7 +257,7 @@ export async function getMeals(ownerId: string, day: string): Promise<MealRecord
   return db.getAllAsync<MealRecord>(
     `SELECT id, owner_id AS ownerId, meal_type AS mealType, food_id AS foodId,
       food_name AS foodName, weight_g AS weightG, calories, protein, fat, carb,
-      portion_label AS portionLabel,
+      portion_label AS portionLabel, source_template_id AS sourceTemplateId,
       recorded_at AS recordedAt, updated_at AS updatedAt
      FROM meal_records WHERE owner_id = ? AND day_key = ? ORDER BY recorded_at`,
     ownerId,
@@ -271,8 +280,9 @@ export async function saveMeal(record: MealRecord, day: string) {
   const db = await databasePromise;
   await db.runAsync(
     `INSERT OR REPLACE INTO meal_records
-     (id, owner_id, meal_type, food_id, food_name, weight_g, portion_label, calories, protein, fat, carb, day_key, recorded_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     (id, owner_id, meal_type, food_id, food_name, weight_g, portion_label,
+      source_template_id, calories, protein, fat, carb, day_key, recorded_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     record.id,
     record.ownerId,
     record.mealType,
@@ -280,6 +290,7 @@ export async function saveMeal(record: MealRecord, day: string) {
     record.foodName,
     record.weightG,
     record.portionLabel ?? null,
+    record.sourceTemplateId ?? null,
     record.calories,
     record.protein,
     record.fat,
@@ -397,6 +408,29 @@ export async function saveTemplate(template: MealTemplate, ownerId: string) {
   await markDirty(ownerId);
 }
 
+export async function getHiddenTemplateIds(ownerId: string): Promise<string[]> {
+  const db = await databasePromise;
+  const rows = await db.getAllAsync<{ templateId: string }>(
+    'SELECT template_id AS templateId FROM hidden_templates WHERE owner_id = ?',
+    ownerId,
+  );
+  return rows.map(row => row.templateId);
+}
+
+export async function deleteTemplate(template: MealTemplate, ownerId: string) {
+  const db = await databasePromise;
+  if (template.builtIn) {
+    await db.runAsync(
+      'INSERT OR IGNORE INTO hidden_templates (owner_id, template_id) VALUES (?, ?)',
+      ownerId,
+      template.id,
+    );
+  } else {
+    await db.runAsync('DELETE FROM meal_templates WHERE id = ? AND owner_id = ?', template.id, ownerId);
+  }
+  await markDirty(ownerId);
+}
+
 export async function getReminders(ownerId: string): Promise<ReminderSettings> {
   const db = await databasePromise;
   const row = await db.getFirstAsync<{
@@ -478,7 +512,7 @@ export async function getSyncStatus(ownerId: string) {
 
 export async function exportSnapshot(ownerId: string): Promise<BackupSnapshot> {
   const db = await databasePromise;
-  const [profile, customFoods, meals, exercises, weights, templates, reminders] = await Promise.all([
+  const [profile, customFoods, meals, exercises, weights, templates, hiddenTemplateIds, reminders] = await Promise.all([
     getProfile(ownerId),
     db.getAllAsync<FoodItem & { servingsJson: string }>(
       `SELECT id, owner_id AS ownerId, name, calories, protein, fat, carb,
@@ -487,7 +521,8 @@ export async function exportSnapshot(ownerId: string): Promise<BackupSnapshot> {
     ),
     db.getAllAsync<MealRecord>(
       `SELECT id, owner_id AS ownerId, meal_type AS mealType, food_id AS foodId, food_name AS foodName,
-        weight_g AS weightG, portion_label AS portionLabel, calories, protein, fat, carb,
+        weight_g AS weightG, portion_label AS portionLabel, source_template_id AS sourceTemplateId,
+        calories, protein, fat, carb,
         recorded_at AS recordedAt, updated_at AS updatedAt
        FROM meal_records WHERE owner_id = ?`, ownerId,
     ),
@@ -499,6 +534,7 @@ export async function exportSnapshot(ownerId: string): Promise<BackupSnapshot> {
     ),
     getWeightRecords(ownerId, 10000),
     getTemplates(ownerId),
+    getHiddenTemplateIds(ownerId),
     getReminders(ownerId),
   ]);
   return {
@@ -514,6 +550,7 @@ export async function exportSnapshot(ownerId: string): Promise<BackupSnapshot> {
     exercises,
     weights,
     templates,
+    hiddenTemplateIds,
     reminders,
   };
 }
@@ -521,7 +558,7 @@ export async function exportSnapshot(ownerId: string): Promise<BackupSnapshot> {
 export async function restoreSnapshot(ownerId: string, snapshot: BackupSnapshot) {
   const db = await databasePromise;
   await db.withTransactionAsync(async () => {
-    for (const table of ['profiles', 'food_items', 'meal_records', 'exercise_records', 'weight_records', 'meal_templates', 'reminder_settings']) {
+    for (const table of ['profiles', 'food_items', 'meal_records', 'exercise_records', 'weight_records', 'meal_templates', 'hidden_templates', 'reminder_settings']) {
       await db.runAsync(`DELETE FROM ${table} WHERE owner_id = ?`, ownerId);
     }
     if (snapshot.profile) {
@@ -531,11 +568,23 @@ export async function restoreSnapshot(ownerId: string, snapshot: BackupSnapshot)
       await saveCustomFood({ ...food, ownerId, servings: food.servings ?? [] }, ownerId);
     }
     for (const meal of snapshot.meals) {
-      await saveMeal({ ...meal, ownerId, portionLabel: meal.portionLabel ?? null }, meal.recordedAt.slice(0, 10));
+      await saveMeal({
+        ...meal,
+        ownerId,
+        portionLabel: meal.portionLabel ?? null,
+        sourceTemplateId: meal.sourceTemplateId ?? null,
+      }, meal.recordedAt.slice(0, 10));
     }
     for (const exercise of snapshot.exercises) await saveExercise({ ...exercise, ownerId }, exercise.recordedAt.slice(0, 10));
     for (const weight of snapshot.weights) await saveWeight({ ...weight, ownerId });
     for (const template of snapshot.templates) await saveTemplate({ ...template, ownerId }, ownerId);
+    for (const templateId of snapshot.hiddenTemplateIds ?? []) {
+      await db.runAsync(
+        'INSERT OR IGNORE INTO hidden_templates (owner_id, template_id) VALUES (?, ?)',
+        ownerId,
+        templateId,
+      );
+    }
     if (snapshot.reminders) await saveReminders({ ...snapshot.reminders, ownerId });
   });
   await setBackupResult(ownerId, true);

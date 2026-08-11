@@ -1,11 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useMemo, useState } from 'react';
-import { Alert, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { AppText, Card, Chip, EmptyState, Field, Header, PrimaryButton, Screen, SectionTitle } from '../components/ui';
 import { EXERCISES, MEAL_LABELS } from '../data/seed';
 import { dateKey } from '../lib/calculations';
 import { useApp } from '../context/AppContext';
-import { FoodItem, MealType } from '../types';
+import { FoodItem, MealTemplate, MealType } from '../types';
 import { useColors } from '../theme';
 
 type RecordMode = 'food' | 'exercise' | 'body';
@@ -19,6 +19,9 @@ export function RecordScreen() {
   const [selectedFood, setSelectedFood] = useState<FoodItem | null>(null);
   const [saving, setSaving] = useState(false);
   const [customFoodOpen, setCustomFoodOpen] = useState(false);
+  const [foodsExpanded, setFoodsExpanded] = useState(false);
+  const scrollRef = useRef<ScrollView>(null);
+  const historyY = useRef(0);
 
   const moveDate = (days: number) => {
     const date = new Date(`${app.selectedDate}T12:00:00`);
@@ -28,8 +31,42 @@ export function RecordScreen() {
 
   const filteredFoods = useMemo(() => {
     const normalized = query.trim().toLowerCase();
-    return app.foods.filter(food => !normalized || food.name.toLowerCase().includes(normalized)).slice(0, 18);
+    return app.foods.filter(food => !normalized || food.name.toLowerCase().includes(normalized));
   }, [app.foods, query]);
+  const visibleFoods = filteredFoods.slice(0, query.trim() ? 8 : foodsExpanded ? 8 : 4);
+
+  const scrollToHistory = () => {
+    setTimeout(() => scrollRef.current?.scrollTo({ y: Math.max(0, historyY.current - 12), animated: true }), 120);
+  };
+
+  const confirmAddTemplate = (template: MealTemplate) => {
+    Alert.alert(
+      `添加“${template.name}”？`,
+      `将组合中的 ${template.items.length} 项食物添加到${MEAL_LABELS[mealType]}。同一组合在该餐次只能添加一次。`,
+      [
+        { text: '取消', style: 'cancel' },
+        { text: '确认添加', onPress: async () => {
+          try {
+            await app.addTemplate(template, mealType);
+            scrollToHistory();
+          } catch (error) {
+            Alert.alert('无法添加', error instanceof Error ? error.message : '请稍后重试');
+          }
+        } },
+      ],
+    );
+  };
+
+  const confirmDeleteTemplate = (template: MealTemplate) => {
+    Alert.alert(
+      `删除“${template.name}”？`,
+      '组合将从当前账号的常用组合中移除，已经记录的饮食明细不会被删除。',
+      [
+        { text: '取消', style: 'cancel' },
+        { text: '删除', style: 'destructive', onPress: () => app.deleteTemplate(template).catch(error => Alert.alert('删除失败', error.message)) },
+      ],
+    );
+  };
 
   const saveSelectedFood = async (weightG: number, portionLabel?: string | null) => {
     if (!selectedFood || weightG <= 0) return;
@@ -43,7 +80,7 @@ export function RecordScreen() {
   };
 
   return (
-    <Screen>
+    <Screen scrollRef={scrollRef}>
       <Header eyebrow="快速记录" title="今天记录什么？" subtitle="餐次 → 食物 → 份量，三步完成。" />
       <View style={[styles.modeBar, { backgroundColor: colors.surfaceMuted }]}>
         <ModeButton label="饮食" icon="restaurant-outline" selected={mode === 'food'} onPress={() => setMode('food')} />
@@ -70,36 +107,41 @@ export function RecordScreen() {
             ))}
           </View>
 
-          <SectionTitle title="常用组合" />
-          <View style={{ gap: 10 }}>
-            {app.templates.slice(0, 4).map(template => (
+          <SectionTitle title="常用组合" action={<Text style={{ color: colors.textMuted, fontSize: 10 }}>左右滑动</Text>} />
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.templateList}>
+            {app.templates.map(template => (
               <Card key={template.id} style={styles.templateCard}>
                 <View style={[styles.templateIcon, { backgroundColor: colors.primarySoft }]}><Text style={{ fontSize: 20 }}>🥗</Text></View>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.templateName, { color: colors.text }]}>{template.name}</Text>
                   <Text numberOfLines={1} style={[styles.templateDescription, { color: colors.textMuted }]}>{template.description}</Text>
                 </View>
-                <Pressable
-                  onPress={() => app.addTemplate(template, mealType).catch(error => Alert.alert('添加失败', error.message))}
-                  style={[styles.roundAdd, { backgroundColor: colors.primary }]}
-                >
-                  <Ionicons name="add" size={21} color="#fff" />
-                </Pressable>
+                <View style={styles.templateActions}>
+                  <Pressable onPress={() => confirmDeleteTemplate(template)} hitSlop={6} style={styles.templateDelete}>
+                    <Ionicons name="trash-outline" size={16} color={colors.textMuted} />
+                  </Pressable>
+                  <Pressable onPress={() => confirmAddTemplate(template)} style={[styles.roundAdd, { backgroundColor: colors.primary }]}>
+                    <Ionicons name="add" size={21} color="#fff" />
+                  </Pressable>
+                </View>
               </Card>
             ))}
-          </View>
+          </ScrollView>
 
           <SectionTitle
             title="搜索食物"
-            action={<Pressable onPress={() => setCustomFoodOpen(true)}><Text style={{ color: colors.primary, fontWeight: '800', fontSize: 12 }}>＋ 自定义</Text></Pressable>}
+            action={<View style={styles.sectionActions}>
+              {!query.trim() && filteredFoods.length > 4 ? <Pressable onPress={() => setFoodsExpanded(value => !value)}><Text style={{ color: colors.textMuted, fontWeight: '700', fontSize: 11 }}>{foodsExpanded ? '收起' : '显示更多'}</Text></Pressable> : null}
+              <Pressable onPress={() => setCustomFoodOpen(true)}><Text style={{ color: colors.primary, fontWeight: '800', fontSize: 12 }}>＋ 自定义</Text></Pressable>
+            </View>}
           />
           <View style={[styles.search, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <Ionicons name="search" size={18} color={colors.textMuted} />
             <Field value={query} onChangeText={setQuery} placeholder="米饭、鸡胸肉、苹果…" />
           </View>
           <Card style={{ padding: 0, overflow: 'hidden' }}>
-            {filteredFoods.map((food, index) => (
-              <View key={food.id} style={[styles.foodRow, index < filteredFoods.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }]}>
+            {!visibleFoods.length ? <EmptyState icon="🔎" title="没有找到食物" detail="换个关键词，或添加自定义食物。" /> : visibleFoods.map((food, index) => (
+              <View key={food.id} style={[styles.foodRow, index < visibleFoods.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }]}>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.foodName, { color: colors.text }]}>{food.name}{food.ownerId ? <Text style={{ color: colors.primary, fontSize: 9 }}>  自定义</Text> : null}</Text>
                   <Text style={[styles.foodNutrition, { color: colors.textMuted }]}>
@@ -128,7 +170,9 @@ export function RecordScreen() {
             ))}
           </Card>
 
-          <MealHistory mealType={mealType} />
+          <View onLayout={event => { historyY.current = event.nativeEvent.layout.y; }}>
+            <MealHistory mealType={mealType} />
+          </View>
         </>
       ) : mode === 'exercise' ? <ExerciseForm /> : <BodyForm />}
 
@@ -379,12 +423,16 @@ const styles = StyleSheet.create({
   dateText: { fontSize: 14, fontWeight: '800' },
   dateHint: { fontSize: 9, marginTop: 2 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  templateCard: { padding: 13, borderRadius: 18, flexDirection: 'row', alignItems: 'center', gap: 11 },
+  templateCard: { width: 270, padding: 13, borderRadius: 18, flexDirection: 'row', alignItems: 'center', gap: 11 },
+  templateList: { gap: 10, paddingRight: 4 },
   templateIcon: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   templateName: { fontSize: 14, fontWeight: '800' },
   templateDescription: { fontSize: 10, marginTop: 3 },
+  templateActions: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  templateDelete: { width: 30, height: 35, alignItems: 'center', justifyContent: 'center' },
   roundAdd: { width: 35, height: 35, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   search: { flexDirection: 'row', alignItems: 'center', paddingLeft: 14, borderWidth: 1, borderRadius: 17 },
+  sectionActions: { flexDirection: 'row', alignItems: 'center', gap: 13 },
   foodRow: { minHeight: 67, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, gap: 10 },
   foodName: { fontSize: 13, fontWeight: '800' },
   foodNutrition: { fontSize: 9.5, marginTop: 4 },
