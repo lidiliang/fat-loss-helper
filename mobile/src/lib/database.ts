@@ -46,6 +46,7 @@ export async function initDatabase() {
       fat REAL NOT NULL,
       carb REAL NOT NULL,
       is_common INTEGER NOT NULL DEFAULT 0,
+      nutrition_unit TEXT NOT NULL DEFAULT 'g',
       servings_json TEXT NOT NULL DEFAULT '[]'
     );
     CREATE INDEX IF NOT EXISTS idx_food_owner ON food_items(owner_id);
@@ -128,6 +129,9 @@ export async function initDatabase() {
   if (!foodColumns.some(column => column.name === 'servings_json')) {
     await db.execAsync("ALTER TABLE food_items ADD COLUMN servings_json TEXT NOT NULL DEFAULT '[]'");
   }
+  if (!foodColumns.some(column => column.name === 'nutrition_unit')) {
+    await db.execAsync("ALTER TABLE food_items ADD COLUMN nutrition_unit TEXT NOT NULL DEFAULT 'g'");
+  }
   const mealColumns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(meal_records)');
   if (!mealColumns.some(column => column.name === 'portion_label')) {
     await db.execAsync('ALTER TABLE meal_records ADD COLUMN portion_label TEXT');
@@ -194,7 +198,7 @@ export async function getFoods(ownerId: string): Promise<FoodItem[]> {
   const db = await databasePromise;
   const custom = await db.getAllAsync<FoodItem & { servingsJson: string }>(
     `SELECT id, owner_id AS ownerId, name, calories, protein, fat, carb,
-      is_common AS isCommon, servings_json AS servingsJson
+      is_common AS isCommon, nutrition_unit AS nutritionUnit, servings_json AS servingsJson
      FROM food_items WHERE owner_id = ? ORDER BY name`,
     ownerId,
   );
@@ -212,8 +216,8 @@ export async function saveCustomFood(food: FoodItem, ownerId: string) {
   const db = await databasePromise;
   await db.runAsync(
     `INSERT OR REPLACE INTO food_items
-     (id, owner_id, name, calories, protein, fat, carb, is_common, servings_json)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     (id, owner_id, name, calories, protein, fat, carb, is_common, nutrition_unit, servings_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     food.id,
     ownerId,
     food.name,
@@ -222,6 +226,7 @@ export async function saveCustomFood(food: FoodItem, ownerId: string) {
     food.fat,
     food.carb,
     food.isCommon ? 1 : 0,
+    food.nutritionUnit ?? 'g',
     JSON.stringify(food.servings ?? []),
   );
   await markDirty(ownerId);
@@ -516,7 +521,7 @@ export async function exportSnapshot(ownerId: string): Promise<BackupSnapshot> {
     getProfile(ownerId),
     db.getAllAsync<FoodItem & { servingsJson: string }>(
       `SELECT id, owner_id AS ownerId, name, calories, protein, fat, carb,
-        is_common AS isCommon, servings_json AS servingsJson
+        is_common AS isCommon, nutrition_unit AS nutritionUnit, servings_json AS servingsJson
        FROM food_items WHERE owner_id = ?`, ownerId,
     ),
     db.getAllAsync<MealRecord>(
@@ -565,7 +570,7 @@ export async function restoreSnapshot(ownerId: string, snapshot: BackupSnapshot)
       await saveProfile({ ...snapshot.profile, ownerId, fattyLiverLevel: snapshot.profile.fattyLiverLevel ?? 'none' });
     }
     for (const food of snapshot.customFoods) {
-      await saveCustomFood({ ...food, ownerId, servings: food.servings ?? [] }, ownerId);
+      await saveCustomFood({ ...food, ownerId, nutritionUnit: food.nutritionUnit ?? 'g', servings: food.servings ?? [] }, ownerId);
     }
     for (const meal of snapshot.meals) {
       await saveMeal({

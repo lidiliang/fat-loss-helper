@@ -2,6 +2,7 @@ export type Gender = 'male' | 'female';
 export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
 export type ActivityLevel = 'sedentary' | 'light' | 'moderate' | 'active' | 'very_active';
 export type FattyLiverLevel = 'none' | 'mild' | 'moderate' | 'severe';
+export type FoodMeasureUnit = 'g' | 'ml';
 
 export interface SessionUser {
   id: string;
@@ -37,12 +38,16 @@ export interface FoodItem {
   fat: number;
   carb: number;
   isCommon: boolean;
+  nutritionUnit?: FoodMeasureUnit;
   servings?: FoodServing[];
 }
 
 export interface FoodServing {
   label: string;
-  grams: number;
+  /** Base amount for nutrition calculation; prefer this for new data. */
+  amount?: number;
+  /** Legacy solid-food amount retained for existing data and backups. */
+  grams?: number;
 }
 
 export interface MealRecord {

@@ -5,10 +5,19 @@ import { AppText, Card, Chip, EmptyState, Field, Header, PrimaryButton, Screen, 
 import { EXERCISES, MEAL_LABELS } from '../data/seed';
 import { dateKey } from '../lib/calculations';
 import { useApp } from '../context/AppContext';
-import { FoodItem, MealTemplate, MealType } from '../types';
+import { FoodItem, FoodMeasureUnit, FoodServing, MealTemplate, MealType } from '../types';
 import { useColors } from '../theme';
 
 type RecordMode = 'food' | 'exercise' | 'body';
+
+function servingAmount(serving: FoodServing) {
+  return serving.amount ?? serving.grams ?? 0;
+}
+
+function measureLabels(food: FoodItem | null) {
+  const isLiquid = food?.nutritionUnit === 'ml';
+  return { short: isLiquid ? 'mL' : 'g', long: isLiquid ? '毫升' : '克' };
+}
 
 export function RecordScreen() {
   const colors = useColors();
@@ -145,8 +154,8 @@ export function RecordScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.foodName, { color: colors.text }]}>{food.name}{food.ownerId ? <Text style={{ color: colors.primary, fontSize: 9 }}>  自定义</Text> : null}</Text>
                   <Text style={[styles.foodNutrition, { color: colors.textMuted }]}>
-                    {food.calories} kcal · 蛋白质 {food.protein}g · 脂肪 {food.fat}g / 100g
-                    {food.servings?.length ? ` · ${food.servings[0].label}≈${food.servings[0].grams}g` : ''}
+                    {food.calories} kcal · 蛋白质 {food.protein}g · 脂肪 {food.fat}g / 100{measureLabels(food).short}
+                    {food.servings?.length ? ` · ${food.servings[0].label}≈${servingAmount(food.servings[0])}${measureLabels(food).short}` : ''}
                   </Text>
                 </View>
                 <View style={styles.foodActions}>
@@ -217,7 +226,7 @@ function MealHistory({ mealType }: { mealType: MealType }) {
               <Text style={[styles.foodName, { color: colors.text }]}>{item.foodName} · {item.portionLabel || `${item.weightG}g`}</Text>
               <Text style={[styles.foodNutrition, { color: colors.textMuted }]}>{Math.round(item.calories)} kcal · 蛋白质 {item.protein.toFixed(1)}g</Text>
             </View>
-            <Pressable onPress={() => Alert.alert('删除这条记录？', `${item.foodName} ${item.weightG}g`, [
+            <Pressable onPress={() => Alert.alert('删除这条记录？', `${item.foodName} ${item.portionLabel || `${item.weightG}g`}`, [
               { text: '取消', style: 'cancel' },
               { text: '删除', style: 'destructive', onPress: () => app.deleteMeal(item.id) },
             ])}><Ionicons name="trash-outline" size={18} color={colors.textMuted} /></Pressable>
@@ -328,7 +337,8 @@ function FoodWeightModal({ food, onClose, onSave, saving, mealType }: {
   const servings = food?.servings ?? [];
   const serving = servingIndex >= 0 ? servings[servingIndex] : undefined;
   const numericAmount = Number(amount) || 0;
-  const weightG = serving ? numericAmount * serving.grams : numericAmount;
+  const labels = measureLabels(food);
+  const weightG = serving ? numericAmount * servingAmount(serving) : numericAmount;
   const estimated = food ? Math.round(food.calories * weightG / 100) : 0;
 
   useEffect(() => {
@@ -344,7 +354,9 @@ function FoodWeightModal({ food, onClose, onSave, saving, mealType }: {
   };
   const submit = () => {
     if (weightG <= 0) return Alert.alert('请填写份量', '食用份量需要大于 0。');
-    const portionLabel = serving ? `${numericAmount}${serving.label}（约${Math.round(weightG)}g）` : null;
+    const portionLabel = serving
+      ? `${numericAmount}${serving.label}（约${Math.round(weightG)}${labels.short}）`
+      : `${numericAmount}${labels.short}`;
     onSave(weightG, portionLabel);
   };
   return (
@@ -357,18 +369,18 @@ function FoodWeightModal({ food, onClose, onSave, saving, mealType }: {
         {servings.length ? (
           <View style={styles.quickWeights}>
             {servings.map((item, index) => (
-              <Chip key={`${item.label}-${item.grams}`} label={`${item.label}（约${item.grams}g）`} selected={servingIndex === index} onPress={() => chooseServing(index)} small />
+              <Chip key={`${item.label}-${servingAmount(item)}`} label={`${item.label}（约${servingAmount(item)}${labels.short}）`} selected={servingIndex === index} onPress={() => chooseServing(index)} small />
             ))}
-            <Chip label="克" selected={servingIndex === -1} onPress={() => chooseServing(-1)} small />
+            <Chip label={labels.long} selected={servingIndex === -1} onPress={() => chooseServing(-1)} small />
           </View>
         ) : null}
-        <Field label={serving ? `数量（${serving.label}）` : '食用重量'} value={amount} onChangeText={setAmount} keyboardType="decimal-pad" suffix={serving?.label ?? '克'} />
+        <Field label={serving ? `数量（${serving.label}）` : `食用${labels.long}数`} value={amount} onChangeText={setAmount} keyboardType="decimal-pad" suffix={serving?.label ?? labels.long} />
         <View style={styles.quickWeights}>
           {(serving ? [0.5, 1, 2, 3] : [50, 100, 150, 200, 250]).map(value => (
-            <Chip key={value} label={`${value}${serving?.label ?? 'g'}`} selected={numericAmount === value} onPress={() => setAmount(String(value))} small />
+            <Chip key={value} label={`${value}${serving?.label ?? labels.short}`} selected={numericAmount === value} onPress={() => setAmount(String(value))} small />
           ))}
         </View>
-        {serving ? <Text style={[styles.conversionHint, { color: colors.textMuted }]}>换算重量约 {Math.round(weightG)} 克，营养数据将自动计算</Text> : null}
+        {serving ? <Text style={[styles.conversionHint, { color: colors.textMuted }]}>换算约 {Math.round(weightG)} {labels.long}，营养数据将自动计算</Text> : null}
         <PrimaryButton label="确认记录" onPress={submit} loading={saving} />
       </View>
     </Modal>
@@ -383,17 +395,20 @@ function CustomFoodModal({ visible, onClose }: { visible: boolean; onClose: () =
   const [protein, setProtein] = useState('');
   const [fat, setFat] = useState('');
   const [carb, setCarb] = useState('');
+  const [nutritionUnit, setNutritionUnit] = useState<FoodMeasureUnit>('g');
   const [unit, setUnit] = useState('');
-  const [unitGrams, setUnitGrams] = useState('');
+  const [unitAmount, setUnitAmount] = useState('');
+  const unitLabel = nutritionUnit === 'ml' ? '毫升' : '克';
   const submit = async () => {
-    if (!name.trim() || Number(calories) <= 0) return Alert.alert('请填写名称和每 100g 热量');
-    if (Boolean(unit.trim()) !== Boolean(Number(unitGrams) > 0)) return Alert.alert('份量信息不完整', '常用单位和每单位克数需要同时填写，或同时留空。');
+    if (!name.trim() || Number(calories) <= 0) return Alert.alert(`请填写名称和每 100${nutritionUnit === 'ml' ? 'mL' : 'g'} 热量`);
+    if (Boolean(unit.trim()) !== Boolean(Number(unitAmount) > 0)) return Alert.alert('份量信息不完整', `常用单位和每单位${unitLabel}数需要同时填写，或同时留空。`);
     await app.addCustomFood({
       name: name.trim(), calories: Number(calories), protein: Number(protein) || 0,
       fat: Number(fat) || 0, carb: Number(carb) || 0, isCommon: false,
-      servings: unit.trim() ? [{ label: unit.trim(), grams: Number(unitGrams) }] : [],
+      nutritionUnit,
+      servings: unit.trim() ? [{ label: unit.trim(), amount: Number(unitAmount) }] : [],
     });
-    setName(''); setCalories(''); setProtein(''); setFat(''); setCarb(''); setUnit(''); setUnitGrams(''); onClose();
+    setName(''); setCalories(''); setProtein(''); setFat(''); setCarb(''); setNutritionUnit('g'); setUnit(''); setUnitAmount(''); onClose();
   };
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -401,7 +416,11 @@ function CustomFoodModal({ visible, onClose }: { visible: boolean; onClose: () =
       <View style={[styles.sheet, { backgroundColor: colors.surface }]}>
         <View style={[styles.handle, { backgroundColor: colors.border }]} />
         <Text style={[styles.sheetTitle, { color: colors.text }]}>添加自定义食物</Text>
-        <Text style={[styles.sheetSubtitle, { color: colors.textMuted }]}>营养数据按每 100 克填写；常见食物请先搜索内置食物库</Text>
+        <Text style={[styles.sheetSubtitle, { color: colors.textMuted }]}>先选择营养标签基准；常见食物请先搜索内置食物库</Text>
+        <View style={styles.quickWeights}>
+          <Chip label="每100克" selected={nutritionUnit === 'g'} onPress={() => setNutritionUnit('g')} small />
+          <Chip label="每100毫升" selected={nutritionUnit === 'ml'} onPress={() => setNutritionUnit('ml')} small />
+        </View>
         <Field label="食物名称" value={name} onChangeText={setName} placeholder="例如：自制杂粮饼" />
         <View style={styles.fieldRow}><Field label="热量" value={calories} onChangeText={setCalories} keyboardType="decimal-pad" suffix="kcal" /><Field label="蛋白质" value={protein} onChangeText={setProtein} keyboardType="decimal-pad" suffix="g" /></View>
         <View style={styles.fieldRow}><Field label="脂肪" value={fat} onChangeText={setFat} keyboardType="decimal-pad" suffix="g" /><Field label="碳水" value={carb} onChangeText={setCarb} keyboardType="decimal-pad" suffix="g" /></View>
@@ -409,7 +428,7 @@ function CustomFoodModal({ visible, onClose }: { visible: boolean; onClose: () =
         <View style={styles.quickWeights}>
           {['个', '杯', '片', '小块', '碗', '袋'].map(value => <Chip key={value} label={value} selected={unit === value} onPress={() => setUnit(value)} small />)}
         </View>
-        <View style={styles.fieldRow}><Field label="单位" value={unit} onChangeText={setUnit} placeholder="例如：个" /><Field label="每单位约合" value={unitGrams} onChangeText={setUnitGrams} keyboardType="decimal-pad" suffix="克" /></View>
+        <View style={styles.fieldRow}><Field label="单位" value={unit} onChangeText={setUnit} placeholder="例如：个" /><Field label="每单位约合" value={unitAmount} onChangeText={setUnitAmount} keyboardType="decimal-pad" suffix={unitLabel} /></View>
         <PrimaryButton label="保存食物" onPress={submit} />
       </View>
     </Modal>

@@ -22,6 +22,14 @@ export const FATTY_LIVER_LEVELS: Array<{ value: FattyLiverLevel; label: string }
   { value: 'severe', label: '重度' },
 ];
 
+export const CONVENIENT_FAT_LOSS_FOODS = [
+  { foodId: 'konjac-noodles', emoji: '🍜', name: '魔芋丝', portion: '1袋约24 kcal', reason: '低能量、增加餐量和饱腹感；少放油和高盐酱料。' },
+  { foodId: 'egg', emoji: '🥚', name: '鸡蛋', portion: '1个约72 kcal', reason: '蛋白质方便；优先水煮蛋或少油蛋花汤。' },
+  { foodId: 'skim-milk', emoji: '🥛', name: '脱脂纯牛奶', portion: '1瓶250mL约92 kcal', reason: '补充蛋白质和钙，开盒即饮，适合早餐或加餐。' },
+  { foodId: 'walnut', emoji: '🌰', name: '核桃仁', portion: '约3颗≈97 kcal', reason: '含不饱和脂肪，但能量高，建议一次控制在3颗左右。' },
+  { foodId: 'almond', emoji: '🥜', name: '巴旦木', portion: '5颗≈35 kcal', reason: '便携耐放，建议原味、无盐，一次不超过5颗。' },
+];
+
 export const COMMON_FOODS: FoodItem[] = [
   { id: 'rice', name: '熟米饭', calories: 116, protein: 2.6, fat: 0.3, carb: 25.9, isCommon: true, servings: [{ label: '碗', grams: 200 }, { label: '小碗', grams: 150 }] },
   { id: 'brown-rice', name: '糙米饭', calories: 111, protein: 2.6, fat: 0.9, carb: 23, isCommon: true, servings: [{ label: '碗', grams: 200 }, { label: '小碗', grams: 150 }] },
@@ -42,9 +50,9 @@ export const COMMON_FOODS: FoodItem[] = [
   { id: 'shrimp', name: '虾仁', calories: 93, protein: 18.6, fat: 0.8, carb: 2.8, isCommon: true, servings: [{ label: '只', grams: 12 }, { label: '小碗', grams: 100 }] },
   { id: 'tofu', name: '北豆腐', calories: 116, protein: 9.2, fat: 8.1, carb: 3, isCommon: true, servings: [{ label: '块', grams: 100 }] },
   { id: 'konjac-noodles', name: '魔芋丝', calories: 12, protein: 0.2, fat: 0.1, carb: 2.8, isCommon: true, servings: [{ label: '袋', grams: 200 }, { label: '碗', grams: 150 }] },
-  { id: 'soy-milk', name: '无糖豆浆', calories: 31, protein: 3, fat: 1.6, carb: 1.2, isCommon: true, servings: [{ label: '杯', grams: 250 }] },
-  { id: 'milk', name: '低脂牛奶', calories: 43, protein: 3.2, fat: 1.3, carb: 4.8, isCommon: true, servings: [{ label: '杯', grams: 250 }, { label: '盒', grams: 250 }] },
-  { id: 'skim-milk', name: '脱脂牛奶', calories: 34, protein: 3.4, fat: 0.1, carb: 5, isCommon: true, servings: [{ label: '杯', grams: 250 }, { label: '盒', grams: 250 }] },
+  { id: 'soy-milk', name: '无糖豆浆', calories: 31, protein: 3, fat: 1.6, carb: 1.2, isCommon: true, nutritionUnit: 'ml' as const, servings: [{ label: '杯', amount: 250 }] },
+  { id: 'milk', name: '低脂牛奶', calories: 43, protein: 3.2, fat: 1.3, carb: 4.8, isCommon: true, nutritionUnit: 'ml' as const, servings: [{ label: '杯', amount: 250 }, { label: '盒', amount: 250 }] },
+  { id: 'skim-milk', name: '脱脂纯牛奶', calories: 36.8, protein: 3.2, fat: 0, carb: 5, isCommon: true, nutritionUnit: 'ml' as const, servings: [{ label: '瓶', amount: 250 }, { label: '杯', amount: 250 }] },
   { id: 'yogurt', name: '无糖酸奶', calories: 63, protein: 3.8, fat: 3.2, carb: 4.8, isCommon: true, servings: [{ label: '杯', grams: 200 }] },
   { id: 'low-fat-yogurt', name: '低脂无糖酸奶', calories: 45, protein: 4.2, fat: 1.2, carb: 5.2, isCommon: true, servings: [{ label: '杯', grams: 200 }] },
   { id: 'bok-choy', name: '清炒青菜', calories: 62, protein: 2.1, fat: 4.2, carb: 4.1, isCommon: true, servings: [{ label: '碗', grams: 150 }] },

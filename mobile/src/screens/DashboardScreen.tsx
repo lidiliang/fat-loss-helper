@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
-import { StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Card, Header, PrimaryButton, ProgressBar, Screen, SectionTitle } from '../components/ui';
-import { FATTY_LIVER_LEVELS, MEAL_LABELS } from '../data/seed';
+import { CONVENIENT_FAT_LOSS_FOODS, FATTY_LIVER_LEVELS, MEAL_LABELS } from '../data/seed';
 import { calculateGoals, dateKey, getMealRecommendation, getSaturatedFatLimit } from '../lib/calculations';
 import { useApp } from '../context/AppContext';
 import { MealType, RootTab } from '../types';
@@ -83,6 +83,21 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (tab: RootTab) => 
           <Text style={[styles.liverHintText, { color: colors.textMuted }]}>饱和脂肪建议 ≤ {getSaturatedFatLimit(profile.fatGoal)}g/天；少用猪油、黄油和肥肉，优先鱼类、少量坚果及植物油。</Text>
         </View>
       </Card>
+
+      <SectionTitle title="方便常备的减脂友好食物" action={<Text style={{ color: colors.textMuted, fontSize: 10 }}>左右滑动</Text>} />
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.foodTipsList}>
+        {CONVENIENT_FAT_LOSS_FOODS.map(item => (
+          <View key={item.foodId} style={[styles.foodTipCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={[styles.foodTipIcon, { backgroundColor: colors.primarySoft }]}><Text style={{ fontSize: 22 }}>{item.emoji}</Text></View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.foodTipName, { color: colors.text }]}>{item.name}</Text>
+              <Text style={[styles.foodTipPortion, { color: colors.primaryDark }]}>{item.portion}</Text>
+              <Text style={[styles.foodTipReason, { color: colors.textMuted }]}>{item.reason}</Text>
+            </View>
+          </View>
+        ))}
+      </ScrollView>
+      <Text style={[styles.foodTipsDisclaimer, { color: colors.textMuted }]}>这些食物便于控制份量和坚持记录；减脂效果仍取决于全天总热量与长期执行。</Text>
 
       <SectionTitle title="今日记录" />
       <Card style={{ padding: 0, overflow: 'hidden' }}>
@@ -167,6 +182,13 @@ const styles = StyleSheet.create({
   limit: { fontSize: 11 },
   liverHint: { borderRadius: 13, padding: 11, flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   liverHintText: { flex: 1, fontSize: 10.5, lineHeight: 16 },
+  foodTipsList: { gap: 10, paddingRight: 4 },
+  foodTipCard: { width: 270, minHeight: 126, borderWidth: 1, borderRadius: 18, padding: 14, flexDirection: 'row', alignItems: 'flex-start', gap: 11 },
+  foodTipIcon: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  foodTipName: { fontSize: 14, fontWeight: '900' },
+  foodTipPortion: { fontSize: 11, fontWeight: '800', marginTop: 3 },
+  foodTipReason: { fontSize: 10.5, lineHeight: 16, marginTop: 5 },
+  foodTipsDisclaimer: { fontSize: 10, lineHeight: 15, marginTop: -6 },
   noRecords: { padding: 30, alignItems: 'center', gap: 6 },
   noRecordTitle: { fontSize: 15, fontWeight: '800' },
   noRecordDetail: { fontSize: 12, textAlign: 'center' },
