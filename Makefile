@@ -1,4 +1,4 @@
-.PHONY: db-up db-down api api-local mobile apk test smoke
+.PHONY: db-up db-down api api-local mobile apk apk-release test smoke
 
 db-up:
 	docker-compose up -d postgres
@@ -18,6 +18,9 @@ mobile:
 
 apk:
 	./scripts/build-android-apk.sh
+
+apk-release:
+	./scripts/build-android-release-apk.sh
 
 test:
 	cd mobile && npm run typecheck

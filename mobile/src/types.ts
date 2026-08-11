@@ -50,6 +50,12 @@ export interface FoodServing {
   grams?: number;
 }
 
+export interface FoodServingOverride {
+  foodId: string;
+  servings: FoodServing[];
+  updatedAt: string;
+}
+
 export interface MealRecord {
   id: string;
   ownerId: string;
@@ -140,6 +146,7 @@ export interface BackupSnapshot {
   exercises: ExerciseRecord[];
   weights: WeightRecord[];
   templates: MealTemplate[];
+  foodServingOverrides?: FoodServingOverride[];
   hiddenTemplateIds?: string[];
   reminders: ReminderSettings | null;
 }

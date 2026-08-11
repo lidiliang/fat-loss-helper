@@ -5,6 +5,8 @@ import {
   DailyIntake,
   ExerciseRecord,
   FoodItem,
+  FoodServing,
+  FoodServingOverride,
   MealRecord,
   MealTemplate,
   ReminderSettings,
@@ -50,6 +52,13 @@ export async function initDatabase() {
       servings_json TEXT NOT NULL DEFAULT '[]'
     );
     CREATE INDEX IF NOT EXISTS idx_food_owner ON food_items(owner_id);
+    CREATE TABLE IF NOT EXISTS food_serving_overrides (
+      owner_id TEXT NOT NULL,
+      food_id TEXT NOT NULL,
+      servings_json TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (owner_id, food_id)
+    );
     CREATE TABLE IF NOT EXISTS meal_records (
       id TEXT PRIMARY KEY NOT NULL,
       owner_id TEXT NOT NULL,
@@ -196,20 +205,52 @@ export async function saveProfile(profile: UserProfile) {
 
 export async function getFoods(ownerId: string): Promise<FoodItem[]> {
   const db = await databasePromise;
-  const custom = await db.getAllAsync<FoodItem & { servingsJson: string }>(
-    `SELECT id, owner_id AS ownerId, name, calories, protein, fat, carb,
-      is_common AS isCommon, nutrition_unit AS nutritionUnit, servings_json AS servingsJson
-     FROM food_items WHERE owner_id = ? ORDER BY name`,
-    ownerId,
-  );
-  return [
+  const [custom, overrides] = await Promise.all([
+    db.getAllAsync<FoodItem & { servingsJson: string }>(
+      `SELECT id, owner_id AS ownerId, name, calories, protein, fat, carb,
+        is_common AS isCommon, nutrition_unit AS nutritionUnit, servings_json AS servingsJson
+       FROM food_items WHERE owner_id = ? ORDER BY name`,
+      ownerId,
+    ),
+    getFoodServingOverrides(ownerId),
+  ]);
+  const overrideMap = new Map(overrides.map(item => [item.foodId, item.servings]));
+  return ([
     ...custom.map(({ servingsJson, ...item }) => ({
       ...item,
       isCommon: Boolean(item.isCommon),
       servings: JSON.parse(servingsJson || '[]'),
     })),
     ...COMMON_FOODS,
-  ];
+  ] as FoodItem[]).map(food => ({ ...food, servings: overrideMap.get(food.id) ?? food.servings }));
+}
+
+export async function getFoodServingOverrides(ownerId: string): Promise<FoodServingOverride[]> {
+  const db = await databasePromise;
+  const rows = await db.getAllAsync<{ foodId: string; servingsJson: string; updatedAt: string }>(
+    `SELECT food_id AS foodId, servings_json AS servingsJson, updated_at AS updatedAt
+     FROM food_serving_overrides WHERE owner_id = ?`,
+    ownerId,
+  );
+  return rows.map(({ servingsJson, ...row }) => ({
+    ...row,
+    servings: JSON.parse(servingsJson || '[]') as FoodServing[],
+  }));
+}
+
+export async function saveFoodServingOverride(ownerId: string, foodId: string, servings: FoodServing[], updatedAt = new Date().toISOString()) {
+  const db = await databasePromise;
+  await db.runAsync(
+    `INSERT INTO food_serving_overrides (owner_id, food_id, servings_json, updated_at)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(owner_id, food_id) DO UPDATE SET
+       servings_json=excluded.servings_json, updated_at=excluded.updated_at`,
+    ownerId,
+    foodId,
+    JSON.stringify(servings),
+    updatedAt,
+  );
+  await markDirty(ownerId);
 }
 
 export async function saveCustomFood(food: FoodItem, ownerId: string) {
@@ -252,6 +293,7 @@ export async function deleteCustomFood(id: string, ownerId: string) {
         );
       }
     }
+    await db.runAsync('DELETE FROM food_serving_overrides WHERE food_id = ? AND owner_id = ?', id, ownerId);
     await db.runAsync('DELETE FROM food_items WHERE id = ? AND owner_id = ?', id, ownerId);
   });
   await markDirty(ownerId);
@@ -517,7 +559,7 @@ export async function getSyncStatus(ownerId: string) {
 
 export async function exportSnapshot(ownerId: string): Promise<BackupSnapshot> {
   const db = await databasePromise;
-  const [profile, customFoods, meals, exercises, weights, templates, hiddenTemplateIds, reminders] = await Promise.all([
+  const [profile, customFoods, meals, exercises, weights, templates, foodServingOverrides, hiddenTemplateIds, reminders] = await Promise.all([
     getProfile(ownerId),
     db.getAllAsync<FoodItem & { servingsJson: string }>(
       `SELECT id, owner_id AS ownerId, name, calories, protein, fat, carb,
@@ -539,6 +581,7 @@ export async function exportSnapshot(ownerId: string): Promise<BackupSnapshot> {
     ),
     getWeightRecords(ownerId, 10000),
     getTemplates(ownerId),
+    getFoodServingOverrides(ownerId),
     getHiddenTemplateIds(ownerId),
     getReminders(ownerId),
   ]);
@@ -555,6 +598,7 @@ export async function exportSnapshot(ownerId: string): Promise<BackupSnapshot> {
     exercises,
     weights,
     templates,
+    foodServingOverrides,
     hiddenTemplateIds,
     reminders,
   };
@@ -563,7 +607,7 @@ export async function exportSnapshot(ownerId: string): Promise<BackupSnapshot> {
 export async function restoreSnapshot(ownerId: string, snapshot: BackupSnapshot) {
   const db = await databasePromise;
   await db.withTransactionAsync(async () => {
-    for (const table of ['profiles', 'food_items', 'meal_records', 'exercise_records', 'weight_records', 'meal_templates', 'hidden_templates', 'reminder_settings']) {
+    for (const table of ['profiles', 'food_items', 'food_serving_overrides', 'meal_records', 'exercise_records', 'weight_records', 'meal_templates', 'hidden_templates', 'reminder_settings']) {
       await db.runAsync(`DELETE FROM ${table} WHERE owner_id = ?`, ownerId);
     }
     if (snapshot.profile) {
@@ -583,6 +627,9 @@ export async function restoreSnapshot(ownerId: string, snapshot: BackupSnapshot)
     for (const exercise of snapshot.exercises) await saveExercise({ ...exercise, ownerId }, exercise.recordedAt.slice(0, 10));
     for (const weight of snapshot.weights) await saveWeight({ ...weight, ownerId });
     for (const template of snapshot.templates) await saveTemplate({ ...template, ownerId }, ownerId);
+    for (const override of snapshot.foodServingOverrides ?? []) {
+      await saveFoodServingOverride(ownerId, override.foodId, override.servings, override.updatedAt);
+    }
     for (const templateId of snapshot.hiddenTemplateIds ?? []) {
       await db.runAsync(
         'INSERT OR IGNORE INTO hidden_templates (owner_id, template_id) VALUES (?, ?)',

@@ -88,6 +88,15 @@ export function RecordScreen() {
     }
   };
 
+  const updateSelectedServing = async (servingIndex: number, baseAmount: number) => {
+    if (!selectedFood?.servings?.[servingIndex]) return;
+    const nextServings = selectedFood.servings.map((serving, index) => (
+      index === servingIndex ? { label: serving.label, amount: baseAmount } : serving
+    ));
+    await app.saveFoodServings(selectedFood.id, nextServings);
+    setSelectedFood({ ...selectedFood, servings: nextServings });
+  };
+
   return (
     <Screen scrollRef={scrollRef}>
       <Header eyebrow="快速记录" title="今天记录什么？" subtitle="餐次 → 食物 → 份量，三步完成。" />
@@ -185,7 +194,7 @@ export function RecordScreen() {
         </>
       ) : mode === 'exercise' ? <ExerciseForm /> : <BodyForm />}
 
-      <FoodWeightModal food={selectedFood} onClose={() => setSelectedFood(null)} onSave={saveSelectedFood} saving={saving} mealType={mealType} />
+      <FoodWeightModal food={selectedFood} onClose={() => setSelectedFood(null)} onSave={saveSelectedFood} onUpdateServing={updateSelectedServing} saving={saving} mealType={mealType} />
       <CustomFoodModal visible={customFoodOpen} onClose={() => setCustomFoodOpen(false)} />
     </Screen>
   );
@@ -328,12 +337,20 @@ function BodyForm() {
   );
 }
 
-function FoodWeightModal({ food, onClose, onSave, saving, mealType }: {
-  food: FoodItem | null; onClose: () => void; onSave: (weightG: number, portionLabel?: string | null) => void; saving: boolean; mealType: MealType;
+function FoodWeightModal({ food, onClose, onSave, onUpdateServing, saving, mealType }: {
+  food: FoodItem | null;
+  onClose: () => void;
+  onSave: (weightG: number, portionLabel?: string | null) => void;
+  onUpdateServing: (servingIndex: number, baseAmount: number) => Promise<void>;
+  saving: boolean;
+  mealType: MealType;
 }) {
   const colors = useColors();
   const [amount, setAmount] = useState('1');
   const [servingIndex, setServingIndex] = useState(-1);
+  const [editingServing, setEditingServing] = useState(false);
+  const [servingDraft, setServingDraft] = useState('');
+  const [servingSaving, setServingSaving] = useState(false);
   const servings = food?.servings ?? [];
   const serving = servingIndex >= 0 ? servings[servingIndex] : undefined;
   const numericAmount = Number(amount) || 0;
@@ -346,11 +363,32 @@ function FoodWeightModal({ food, onClose, onSave, saving, mealType }: {
     const hasServings = Boolean(food.servings?.length);
     setServingIndex(hasServings ? 0 : -1);
     setAmount(hasServings ? '1' : '100');
+    setEditingServing(false);
   }, [food?.id]);
 
   const chooseServing = (index: number) => {
     setServingIndex(index);
     setAmount(index >= 0 ? '1' : '100');
+    setEditingServing(false);
+  };
+  const startServingEdit = () => {
+    if (!serving) return;
+    setServingDraft(String(servingAmount(serving)));
+    setEditingServing(true);
+  };
+  const saveServingEdit = async () => {
+    const nextAmount = Number(servingDraft);
+    if (!Number.isFinite(nextAmount) || nextAmount <= 0 || nextAmount > 10000) {
+      return Alert.alert('请检查份量', `每${serving?.label ?? '份'}换算需要大于 0 且不超过 10000 ${labels.long}。`);
+    }
+    setServingSaving(true);
+    try {
+      await onUpdateServing(servingIndex, nextAmount);
+      setEditingServing(false);
+      Alert.alert('份量已更新', `以后记录“${food?.name}”时，每${serving?.label}按 ${nextAmount}${labels.short} 计算。`);
+    } catch (error) {
+      Alert.alert('修改失败', error instanceof Error ? error.message : '请稍后重试');
+    } finally { setServingSaving(false); }
   };
   const submit = () => {
     if (weightG <= 0) return Alert.alert('请填写份量', '食用份量需要大于 0。');
@@ -380,7 +418,25 @@ function FoodWeightModal({ food, onClose, onSave, saving, mealType }: {
             <Chip key={value} label={`${value}${serving?.label ?? labels.short}`} selected={numericAmount === value} onPress={() => setAmount(String(value))} small />
           ))}
         </View>
-        {serving ? <Text style={[styles.conversionHint, { color: colors.textMuted }]}>换算约 {Math.round(weightG)} {labels.long}，营养数据将自动计算</Text> : null}
+        {serving ? (
+          <View style={styles.conversionRow}>
+            <Text style={[styles.conversionHint, { color: colors.textMuted }]}>换算约 {Math.round(weightG)} {labels.long}，营养数据将自动计算</Text>
+            <Pressable onPress={startServingEdit} hitSlop={8}>
+              <Text style={[styles.editServingLink, { color: colors.primary }]}>调整每{serving.label}换算</Text>
+            </Pressable>
+          </View>
+        ) : null}
+        {editingServing && serving ? (
+          <View style={[styles.servingEditor, { backgroundColor: colors.surfaceMuted }]}>
+            <Text style={[styles.servingEditorTitle, { color: colors.text }]}>我的每{serving.label}实际是多少？</Text>
+            <Field label={`每${serving.label}约合`} value={servingDraft} onChangeText={setServingDraft} keyboardType="decimal-pad" suffix={labels.long} />
+            <View style={styles.fieldRow}>
+              <View style={{ flex: 1 }}><PrimaryButton label="取消" onPress={() => setEditingServing(false)} secondary compact /></View>
+              <View style={{ flex: 1 }}><PrimaryButton label="保存换算" onPress={saveServingEdit} loading={servingSaving} compact /></View>
+            </View>
+            <Text style={[styles.servingEditorHint, { color: colors.textMuted }]}>仅影响当前账号，并会随云端备份保存。</Text>
+          </View>
+        ) : null}
         <PrimaryButton label="确认记录" onPress={submit} loading={saving} />
       </View>
     </Modal>
@@ -472,5 +528,10 @@ const styles = StyleSheet.create({
   sheetSubtitle: { fontSize: 12, marginTop: -8 },
   quickWeights: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
   conversionHint: { fontSize: 11, marginTop: -6 },
+  conversionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  editServingLink: { fontSize: 11, fontWeight: '800' },
+  servingEditor: { borderRadius: 14, padding: 12, gap: 10 },
+  servingEditorTitle: { fontSize: 12, fontWeight: '800' },
+  servingEditorHint: { fontSize: 9.5, lineHeight: 14 },
   customUnitTitle: { fontSize: 13, fontWeight: '800', marginBottom: -7 },
 });

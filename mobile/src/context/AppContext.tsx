@@ -1,5 +1,5 @@
 import { AppState } from 'react-native';
-import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { BUILT_IN_TEMPLATES, MEAL_LABELS } from '../data/seed';
 import { calculateExerciseCalories, calculateFoodNutrition, dateKey, randomId, summarizeDay } from '../lib/calculations';
 import {
@@ -17,6 +17,7 @@ import {
   getTemplates,
   getWeightRecords,
   saveCustomFood,
+  saveFoodServingOverride,
   saveExercise as saveExerciseDb,
   saveMeal,
   saveProfile as saveProfileDb,
@@ -24,13 +25,14 @@ import {
   saveTemplate,
   saveWeight,
 } from '../lib/database';
-import { scheduleReminders } from '../lib/notifications';
+import { rescheduleRemindersIfAuthorized, scheduleReminders } from '../lib/notifications';
 import { backupNow, registerPeriodicBackup } from '../lib/sync';
 import {
   DailySummary,
   DailyIntake,
   ExerciseRecord,
   FoodItem,
+  FoodServing,
   MealRecord,
   MealTemplate,
   MealType,
@@ -64,6 +66,7 @@ interface AppValue {
   addWeight: (weightKg: number, waistCm?: number) => Promise<void>;
   addCustomFood: (food: Omit<FoodItem, 'id' | 'ownerId'>) => Promise<void>;
   deleteCustomFood: (id: string) => Promise<void>;
+  saveFoodServings: (foodId: string, servings: FoodServing[]) => Promise<void>;
   createTemplateFromMeal: (mealType: MealType, name: string) => Promise<void>;
   saveReminders: (settings: ReminderSettings) => Promise<void>;
 }
@@ -83,6 +86,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [reminders, setRemindersState] = useState<ReminderSettings | null>(null);
   const [dailyIntakes, setDailyIntakes] = useState<DailyIntake[]>([]);
   const [selectedDate, setSelectedDate] = useState(dateKey());
+  const repairedReminderKey = useRef('');
 
   const refresh = useCallback(async () => {
     if (!user) return;
@@ -106,6 +110,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setTemplates([...customTemplates, ...BUILT_IN_TEMPLATES.filter(template => !hidden.has(template.id))]);
     setRemindersState(nextReminders);
     setDailyIntakes(nextDailyIntakes);
+    const reminderKey = `${user.id}:${nextReminders.updatedAt}`;
+    if (repairedReminderKey.current !== reminderKey) {
+      repairedReminderKey.current = reminderKey;
+      // Repair alarms after app updates, device reboots, or vendor cleanup.
+      // This never prompts on startup when notification permission is absent.
+      void rescheduleRemindersIfAuthorized(nextReminders).catch(() => undefined);
+    }
     setLoading(false);
   }, [user, selectedDate]);
 
@@ -220,6 +231,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const owner = ensureUser();
       await deleteCustomFoodDb(id, owner.id);
       await refresh();
+    },
+    saveFoodServings: async (foodId, nextServings) => {
+      const owner = ensureUser();
+      await saveFoodServingOverride(owner.id, foodId, nextServings);
+      setFoods(current => current.map(food => (
+        food.id === foodId ? { ...food, servings: nextServings } : food
+      )));
     },
     createTemplateFromMeal: async (mealType, name) => {
       const owner = ensureUser();

@@ -11,6 +11,7 @@
 - Mifflin–St Jeor 公式、活动系数、减重缺口与安全热量下限
 - 用户档案支持无、轻度、中度、重度脂肪肝，并按程度提供普通/护肝双目标参考
 - 40+ 种常见中式食物、自定义食物、自然份量换算；固体按克、饮品按毫升记录
+- 每个账号可按实际包装调整“每袋/每碗/每杯”等换算，并随云端备份保存
 - 首页提供方便、平价、易购买的减脂友好食物建议
 - 3 个内置减脂套餐、把已记录餐次保存为常用组合
 - 今日热量与三大营养素预算、净热量、下一餐动态建议
@@ -161,6 +162,20 @@ make apk
 ```
 
 生成文件位于 `artifacts/qingzhi-fatlosshelper-debug.apk`。这是方便真机试用的调试包，不需要 Expo、Google 或开发者账号。
+
+推荐日常真机安装使用精简 ARM64 release 构建。脚本默认读取 `mobile/app.json` 的版本、复用已有 Android 原生工程与 Gradle 缓存，并开启 R8 和资源裁剪：
+
+```bash
+./scripts/build-android-release-apk.sh
+```
+
+也可以在构建前同时更新版本号和 Android `versionCode`：
+
+```bash
+./scripts/build-android-release-apk.sh 1.1.6 9
+```
+
+产物位于 `artifacts/qingzhi-fatlosshelper-arm64-v版本号.apk`。该包只包含 `arm64-v8a`，适合当前主流安卓真机；模拟器如使用 x86_64 架构，请改用 debug 构建。
 
 ### 使用 Expo 账号：EAS 云端构建
 

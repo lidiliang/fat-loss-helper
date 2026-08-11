@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import Constants from 'expo-constants';
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, Linking, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { AppText, Card, Chip, Field, Header, PrimaryButton, Screen, SectionTitle } from '../components/ui';
@@ -6,6 +7,7 @@ import { ACTIVITY_LEVELS, FATTY_LIVER_LEVELS } from '../data/seed';
 import { calculateGoals } from '../lib/calculations';
 import { API_URL } from '../lib/api';
 import { getSyncStatus } from '../lib/database';
+import { sendTestReminder } from '../lib/notifications';
 import { backupNow, restoreLatestBackup } from '../lib/sync';
 import { useAuth } from '../context/AuthContext';
 import { useApp } from '../context/AppContext';
@@ -122,7 +124,7 @@ export function SettingsScreen() {
         { text: '取消', style: 'cancel' },
         { text: '退出', style: 'destructive', onPress: () => logout() },
       ])} />
-      <AppText muted style={{ textAlign: 'center', fontSize: 10 }}>轻脂管家 v1.0.1 · com.qingzhi.fatlosshelper</AppText>
+      <AppText muted style={{ textAlign: 'center', fontSize: 10 }}>轻脂管家 v{Constants.expoConfig?.version ?? '开发版'} · com.qingzhi.fatlosshelper</AppText>
     </Screen>
   );
 }
@@ -188,6 +190,7 @@ function ReminderEditor({ settings }: { settings: ReminderSettings }) {
   const app = useApp();
   const [draft, setDraft] = useState(settings);
   const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
   const days = [{ v: 1, l: '一' }, { v: 2, l: '二' }, { v: 3, l: '三' }, { v: 4, l: '四' }, { v: 5, l: '五' }, { v: 6, l: '六' }, { v: 0, l: '日' }];
   const save = async () => {
     const timeFields = [
@@ -216,6 +219,15 @@ function ReminderEditor({ settings }: { settings: ReminderSettings }) {
       Alert.alert('无法设置提醒', error instanceof Error ? error.message : '请检查系统通知权限');
     } finally { setSaving(false); }
   };
+  const testReminder = async () => {
+    setTesting(true);
+    try {
+      await sendTestReminder();
+      Alert.alert('测试通知已发送', '应该立即出现顶部横幅、声音和振动。若仍未出现，请打开系统权限设置检查通知类别。');
+    } catch (error) {
+      Alert.alert('测试通知失败', error instanceof Error ? error.message : '请检查系统通知权限');
+    } finally { setTesting(false); }
+  };
   return (
     <Card style={{ gap: 15 }}>
       <View style={styles.settingRow}>
@@ -237,7 +249,10 @@ function ReminderEditor({ settings }: { settings: ReminderSettings }) {
       <View style={[styles.infoBox, { backgroundColor: colors.surfaceMuted, gap: 8 }]}>
         <Text style={[styles.settingTitle, { color: colors.text }]}>关于后台运行</Text>
         <AppText muted style={{ fontSize: 10, lineHeight: 16 }}>提醒由安卓系统调度，不要求应用常驻内存。若手机仍延迟提醒，请在系统设置中允许通知、闹钟与提醒，并把电池策略设为“不受限制”；部分品牌还需允许自启动。</AppText>
-        <PrimaryButton label="打开系统权限设置" onPress={() => Linking.openSettings()} secondary compact />
+        <View style={styles.buttonRow}>
+          <View style={{ flex: 1 }}><PrimaryButton label="发送测试通知" onPress={testReminder} loading={testing} compact /></View>
+          <View style={{ flex: 1 }}><PrimaryButton label="系统权限设置" onPress={() => Linking.openSettings()} secondary compact /></View>
+        </View>
       </View>
     </Card>
   );
