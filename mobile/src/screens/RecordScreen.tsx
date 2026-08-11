@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Alert, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { AppText, Card, Chip, EmptyState, Field, Header, PrimaryButton, Screen, SectionTitle } from '../components/ui';
 import { EXERCISES, MEAL_LABELS } from '../data/seed';
@@ -17,7 +17,6 @@ export function RecordScreen() {
   const [mealType, setMealType] = useState<MealType>('breakfast');
   const [query, setQuery] = useState('');
   const [selectedFood, setSelectedFood] = useState<FoodItem | null>(null);
-  const [weightG, setWeightG] = useState('100');
   const [saving, setSaving] = useState(false);
   const [customFoodOpen, setCustomFoodOpen] = useState(false);
 
@@ -32,13 +31,12 @@ export function RecordScreen() {
     return app.foods.filter(food => !normalized || food.name.toLowerCase().includes(normalized)).slice(0, 18);
   }, [app.foods, query]);
 
-  const saveSelectedFood = async () => {
-    if (!selectedFood || Number(weightG) <= 0) return;
+  const saveSelectedFood = async (weightG: number, portionLabel?: string | null) => {
+    if (!selectedFood || weightG <= 0) return;
     setSaving(true);
     try {
-      await app.addMeal(selectedFood, Number(weightG), mealType);
+      await app.addMeal(selectedFood, weightG, mealType, portionLabel);
       setSelectedFood(null);
-      setWeightG('100');
     } finally {
       setSaving(false);
     }
@@ -46,7 +44,7 @@ export function RecordScreen() {
 
   return (
     <Screen>
-      <Header eyebrow="快速记录" title="今天记录什么？" subtitle="餐次 → 食物 → 克数，三步完成。" />
+      <Header eyebrow="快速记录" title="今天记录什么？" subtitle="餐次 → 食物 → 份量，三步完成。" />
       <View style={[styles.modeBar, { backgroundColor: colors.surfaceMuted }]}>
         <ModeButton label="饮食" icon="restaurant-outline" selected={mode === 'food'} onPress={() => setMode('food')} />
         <ModeButton label="运动" icon="walk-outline" selected={mode === 'exercise'} onPress={() => setMode('exercise')} />
@@ -104,11 +102,28 @@ export function RecordScreen() {
               <View key={food.id} style={[styles.foodRow, index < filteredFoods.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }]}>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.foodName, { color: colors.text }]}>{food.name}{food.ownerId ? <Text style={{ color: colors.primary, fontSize: 9 }}>  自定义</Text> : null}</Text>
-                  <Text style={[styles.foodNutrition, { color: colors.textMuted }]}>{food.calories} kcal · 蛋白质 {food.protein}g · 脂肪 {food.fat}g / 100g</Text>
+                  <Text style={[styles.foodNutrition, { color: colors.textMuted }]}>
+                    {food.calories} kcal · 蛋白质 {food.protein}g · 脂肪 {food.fat}g / 100g
+                    {food.servings?.length ? ` · ${food.servings[0].label}≈${food.servings[0].grams}g` : ''}
+                  </Text>
                 </View>
-                <Pressable onPress={() => setSelectedFood(food)} style={[styles.foodAdd, { backgroundColor: colors.primarySoft }]}>
-                  <Ionicons name="add" size={20} color={colors.primaryDark} />
-                </Pressable>
+                <View style={styles.foodActions}>
+                  {food.ownerId ? (
+                    <Pressable
+                      hitSlop={8}
+                      onPress={() => Alert.alert('删除自定义食物？', `“${food.name}”将从食物库移除，既往饮食记录会保留。`, [
+                        { text: '取消', style: 'cancel' },
+                        { text: '删除', style: 'destructive', onPress: () => app.deleteCustomFood(food.id).catch(error => Alert.alert('删除失败', error.message)) },
+                      ])}
+                      style={styles.foodDelete}
+                    >
+                      <Ionicons name="trash-outline" size={17} color={colors.textMuted} />
+                    </Pressable>
+                  ) : null}
+                  <Pressable onPress={() => setSelectedFood(food)} style={[styles.foodAdd, { backgroundColor: colors.primarySoft }]}>
+                    <Ionicons name="add" size={20} color={colors.primaryDark} />
+                  </Pressable>
+                </View>
               </View>
             ))}
           </Card>
@@ -117,7 +132,7 @@ export function RecordScreen() {
         </>
       ) : mode === 'exercise' ? <ExerciseForm /> : <BodyForm />}
 
-      <FoodWeightModal food={selectedFood} weight={weightG} setWeight={setWeightG} onClose={() => setSelectedFood(null)} onSave={saveSelectedFood} saving={saving} mealType={mealType} />
+      <FoodWeightModal food={selectedFood} onClose={() => setSelectedFood(null)} onSave={saveSelectedFood} saving={saving} mealType={mealType} />
       <CustomFoodModal visible={customFoodOpen} onClose={() => setCustomFoodOpen(false)} />
     </Screen>
   );
@@ -155,7 +170,7 @@ function MealHistory({ mealType }: { mealType: MealType }) {
         {!items.length ? <EmptyState icon="✍️" title="这个餐次还未记录" detail="从上方食物库或常用组合添加。" /> : items.map(item => (
           <View key={item.id} style={[styles.historyRow, { borderBottomColor: colors.border }]}>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.foodName, { color: colors.text }]}>{item.foodName} · {item.weightG}g</Text>
+              <Text style={[styles.foodName, { color: colors.text }]}>{item.foodName} · {item.portionLabel || `${item.weightG}g`}</Text>
               <Text style={[styles.foodNutrition, { color: colors.textMuted }]}>{Math.round(item.calories)} kcal · 蛋白质 {item.protein.toFixed(1)}g</Text>
             </View>
             <Pressable onPress={() => Alert.alert('删除这条记录？', `${item.foodName} ${item.weightG}g`, [
@@ -260,11 +275,34 @@ function BodyForm() {
   );
 }
 
-function FoodWeightModal({ food, weight, setWeight, onClose, onSave, saving, mealType }: {
-  food: FoodItem | null; weight: string; setWeight: (value: string) => void; onClose: () => void; onSave: () => void; saving: boolean; mealType: MealType;
+function FoodWeightModal({ food, onClose, onSave, saving, mealType }: {
+  food: FoodItem | null; onClose: () => void; onSave: (weightG: number, portionLabel?: string | null) => void; saving: boolean; mealType: MealType;
 }) {
   const colors = useColors();
-  const estimated = food ? Math.round(food.calories * (Number(weight) || 0) / 100) : 0;
+  const [amount, setAmount] = useState('1');
+  const [servingIndex, setServingIndex] = useState(-1);
+  const servings = food?.servings ?? [];
+  const serving = servingIndex >= 0 ? servings[servingIndex] : undefined;
+  const numericAmount = Number(amount) || 0;
+  const weightG = serving ? numericAmount * serving.grams : numericAmount;
+  const estimated = food ? Math.round(food.calories * weightG / 100) : 0;
+
+  useEffect(() => {
+    if (!food) return;
+    const hasServings = Boolean(food.servings?.length);
+    setServingIndex(hasServings ? 0 : -1);
+    setAmount(hasServings ? '1' : '100');
+  }, [food?.id]);
+
+  const chooseServing = (index: number) => {
+    setServingIndex(index);
+    setAmount(index >= 0 ? '1' : '100');
+  };
+  const submit = () => {
+    if (weightG <= 0) return Alert.alert('请填写份量', '食用份量需要大于 0。');
+    const portionLabel = serving ? `${numericAmount}${serving.label}（约${Math.round(weightG)}g）` : null;
+    onSave(weightG, portionLabel);
+  };
   return (
     <Modal visible={Boolean(food)} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.modalBackdrop} onPress={onClose} />
@@ -272,11 +310,22 @@ function FoodWeightModal({ food, weight, setWeight, onClose, onSave, saving, mea
         <View style={[styles.handle, { backgroundColor: colors.border }]} />
         <Text style={[styles.sheetTitle, { color: colors.text }]}>{food?.name}</Text>
         <Text style={[styles.sheetSubtitle, { color: colors.textMuted }]}>添加到{MEAL_LABELS[mealType]} · 约 {estimated} kcal</Text>
-        <Field label="食用重量" value={weight} onChangeText={setWeight} keyboardType="decimal-pad" suffix="克" />
+        {servings.length ? (
+          <View style={styles.quickWeights}>
+            {servings.map((item, index) => (
+              <Chip key={`${item.label}-${item.grams}`} label={`${item.label}（约${item.grams}g）`} selected={servingIndex === index} onPress={() => chooseServing(index)} small />
+            ))}
+            <Chip label="克" selected={servingIndex === -1} onPress={() => chooseServing(-1)} small />
+          </View>
+        ) : null}
+        <Field label={serving ? `数量（${serving.label}）` : '食用重量'} value={amount} onChangeText={setAmount} keyboardType="decimal-pad" suffix={serving?.label ?? '克'} />
         <View style={styles.quickWeights}>
-          {[50, 100, 150, 200, 250].map(value => <Chip key={value} label={`${value}g`} selected={Number(weight) === value} onPress={() => setWeight(String(value))} small />)}
+          {(serving ? [0.5, 1, 2, 3] : [50, 100, 150, 200, 250]).map(value => (
+            <Chip key={value} label={`${value}${serving?.label ?? 'g'}`} selected={numericAmount === value} onPress={() => setAmount(String(value))} small />
+          ))}
         </View>
-        <PrimaryButton label="确认记录" onPress={onSave} loading={saving} />
+        {serving ? <Text style={[styles.conversionHint, { color: colors.textMuted }]}>换算重量约 {Math.round(weightG)} 克，营养数据将自动计算</Text> : null}
+        <PrimaryButton label="确认记录" onPress={submit} loading={saving} />
       </View>
     </Modal>
   );
@@ -290,10 +339,17 @@ function CustomFoodModal({ visible, onClose }: { visible: boolean; onClose: () =
   const [protein, setProtein] = useState('');
   const [fat, setFat] = useState('');
   const [carb, setCarb] = useState('');
+  const [unit, setUnit] = useState('');
+  const [unitGrams, setUnitGrams] = useState('');
   const submit = async () => {
     if (!name.trim() || Number(calories) <= 0) return Alert.alert('请填写名称和每 100g 热量');
-    await app.addCustomFood({ name: name.trim(), calories: Number(calories), protein: Number(protein) || 0, fat: Number(fat) || 0, carb: Number(carb) || 0, isCommon: false });
-    setName(''); setCalories(''); setProtein(''); setFat(''); setCarb(''); onClose();
+    if (Boolean(unit.trim()) !== Boolean(Number(unitGrams) > 0)) return Alert.alert('份量信息不完整', '常用单位和每单位克数需要同时填写，或同时留空。');
+    await app.addCustomFood({
+      name: name.trim(), calories: Number(calories), protein: Number(protein) || 0,
+      fat: Number(fat) || 0, carb: Number(carb) || 0, isCommon: false,
+      servings: unit.trim() ? [{ label: unit.trim(), grams: Number(unitGrams) }] : [],
+    });
+    setName(''); setCalories(''); setProtein(''); setFat(''); setCarb(''); setUnit(''); setUnitGrams(''); onClose();
   };
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -301,10 +357,15 @@ function CustomFoodModal({ visible, onClose }: { visible: boolean; onClose: () =
       <View style={[styles.sheet, { backgroundColor: colors.surface }]}>
         <View style={[styles.handle, { backgroundColor: colors.border }]} />
         <Text style={[styles.sheetTitle, { color: colors.text }]}>添加自定义食物</Text>
-        <Text style={[styles.sheetSubtitle, { color: colors.textMuted }]}>营养数据均按每 100 克填写</Text>
+        <Text style={[styles.sheetSubtitle, { color: colors.textMuted }]}>营养数据按每 100 克填写；常见食物请先搜索内置食物库</Text>
         <Field label="食物名称" value={name} onChangeText={setName} placeholder="例如：自制杂粮饼" />
         <View style={styles.fieldRow}><Field label="热量" value={calories} onChangeText={setCalories} keyboardType="decimal-pad" suffix="kcal" /><Field label="蛋白质" value={protein} onChangeText={setProtein} keyboardType="decimal-pad" suffix="g" /></View>
         <View style={styles.fieldRow}><Field label="脂肪" value={fat} onChangeText={setFat} keyboardType="decimal-pad" suffix="g" /><Field label="碳水" value={carb} onChangeText={setCarb} keyboardType="decimal-pad" suffix="g" /></View>
+        <Text style={[styles.customUnitTitle, { color: colors.text }]}>常用份量（可选）</Text>
+        <View style={styles.quickWeights}>
+          {['个', '杯', '片', '小块', '碗', '袋'].map(value => <Chip key={value} label={value} selected={unit === value} onPress={() => setUnit(value)} small />)}
+        </View>
+        <View style={styles.fieldRow}><Field label="单位" value={unit} onChangeText={setUnit} placeholder="例如：个" /><Field label="每单位约合" value={unitGrams} onChangeText={setUnitGrams} keyboardType="decimal-pad" suffix="克" /></View>
         <PrimaryButton label="保存食物" onPress={submit} />
       </View>
     </Modal>
@@ -328,6 +389,8 @@ const styles = StyleSheet.create({
   foodName: { fontSize: 13, fontWeight: '800' },
   foodNutrition: { fontSize: 9.5, marginTop: 4 },
   foodAdd: { width: 34, height: 34, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  foodActions: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  foodDelete: { width: 32, height: 34, alignItems: 'center', justifyContent: 'center' },
   historyRow: { minHeight: 65, paddingHorizontal: 15, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: StyleSheet.hairlineWidth },
   formTitle: { fontSize: 16, fontWeight: '800' },
   fieldRow: { flexDirection: 'row', gap: 10 },
@@ -341,4 +404,6 @@ const styles = StyleSheet.create({
   sheetTitle: { fontSize: 22, fontWeight: '900' },
   sheetSubtitle: { fontSize: 12, marginTop: -8 },
   quickWeights: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
+  conversionHint: { fontSize: 11, marginTop: -6 },
+  customUnitTitle: { fontSize: 13, fontWeight: '800', marginBottom: -7 },
 });

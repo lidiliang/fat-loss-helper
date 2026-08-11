@@ -44,7 +44,8 @@ export async function initDatabase() {
       protein REAL NOT NULL,
       fat REAL NOT NULL,
       carb REAL NOT NULL,
-      is_common INTEGER NOT NULL DEFAULT 0
+      is_common INTEGER NOT NULL DEFAULT 0,
+      servings_json TEXT NOT NULL DEFAULT '[]'
     );
     CREATE INDEX IF NOT EXISTS idx_food_owner ON food_items(owner_id);
     CREATE TABLE IF NOT EXISTS meal_records (
@@ -54,6 +55,7 @@ export async function initDatabase() {
       food_id TEXT NOT NULL,
       food_name TEXT NOT NULL,
       weight_g REAL NOT NULL,
+      portion_label TEXT,
       calories REAL NOT NULL,
       protein REAL NOT NULL,
       fat REAL NOT NULL,
@@ -112,6 +114,17 @@ export async function initDatabase() {
       last_error TEXT
     );
   `);
+
+  // CREATE TABLE IF NOT EXISTS does not add new columns on upgrades. Keep existing
+  // installations compatible without replacing or clearing the user's database.
+  const foodColumns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(food_items)');
+  if (!foodColumns.some(column => column.name === 'servings_json')) {
+    await db.execAsync("ALTER TABLE food_items ADD COLUMN servings_json TEXT NOT NULL DEFAULT '[]'");
+  }
+  const mealColumns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(meal_records)');
+  if (!mealColumns.some(column => column.name === 'portion_label')) {
+    await db.execAsync('ALTER TABLE meal_records ADD COLUMN portion_label TEXT');
+  }
 }
 
 export async function getProfile(ownerId: string): Promise<UserProfile | null> {
@@ -158,19 +171,28 @@ export async function saveProfile(profile: UserProfile) {
 
 export async function getFoods(ownerId: string): Promise<FoodItem[]> {
   const db = await databasePromise;
-  const custom = await db.getAllAsync<FoodItem>(
+  const custom = await db.getAllAsync<FoodItem & { servingsJson: string }>(
     `SELECT id, owner_id AS ownerId, name, calories, protein, fat, carb,
-      is_common AS isCommon FROM food_items WHERE owner_id = ? ORDER BY name`,
+      is_common AS isCommon, servings_json AS servingsJson
+     FROM food_items WHERE owner_id = ? ORDER BY name`,
     ownerId,
   );
-  return [...custom.map(item => ({ ...item, isCommon: Boolean(item.isCommon) })), ...COMMON_FOODS];
+  return [
+    ...custom.map(({ servingsJson, ...item }) => ({
+      ...item,
+      isCommon: Boolean(item.isCommon),
+      servings: JSON.parse(servingsJson || '[]'),
+    })),
+    ...COMMON_FOODS,
+  ];
 }
 
 export async function saveCustomFood(food: FoodItem, ownerId: string) {
   const db = await databasePromise;
   await db.runAsync(
     `INSERT OR REPLACE INTO food_items
-     (id, owner_id, name, calories, protein, fat, carb, is_common) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+     (id, owner_id, name, calories, protein, fat, carb, is_common, servings_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     food.id,
     ownerId,
     food.name,
@@ -179,7 +201,33 @@ export async function saveCustomFood(food: FoodItem, ownerId: string) {
     food.fat,
     food.carb,
     food.isCommon ? 1 : 0,
+    JSON.stringify(food.servings ?? []),
   );
+  await markDirty(ownerId);
+}
+
+export async function deleteCustomFood(id: string, ownerId: string) {
+  const db = await databasePromise;
+  await db.withTransactionAsync(async () => {
+    const templates = await db.getAllAsync<{ id: string; itemsJson: string }>(
+      `SELECT id, items_json AS itemsJson FROM meal_templates WHERE owner_id = ?`,
+      ownerId,
+    );
+    for (const template of templates) {
+      const existingItems = JSON.parse(template.itemsJson) as Array<{ foodId: string; weightG: number }>;
+      const items = existingItems
+        .filter(item => item.foodId !== id);
+      if (!items.length) {
+        await db.runAsync('DELETE FROM meal_templates WHERE id = ? AND owner_id = ?', template.id, ownerId);
+      } else if (items.length !== existingItems.length) {
+        await db.runAsync(
+          'UPDATE meal_templates SET items_json = ? WHERE id = ? AND owner_id = ?',
+          JSON.stringify(items), template.id, ownerId,
+        );
+      }
+    }
+    await db.runAsync('DELETE FROM food_items WHERE id = ? AND owner_id = ?', id, ownerId);
+  });
   await markDirty(ownerId);
 }
 
@@ -188,6 +236,7 @@ export async function getMeals(ownerId: string, day: string): Promise<MealRecord
   return db.getAllAsync<MealRecord>(
     `SELECT id, owner_id AS ownerId, meal_type AS mealType, food_id AS foodId,
       food_name AS foodName, weight_g AS weightG, calories, protein, fat, carb,
+      portion_label AS portionLabel,
       recorded_at AS recordedAt, updated_at AS updatedAt
      FROM meal_records WHERE owner_id = ? AND day_key = ? ORDER BY recorded_at`,
     ownerId,
@@ -210,14 +259,15 @@ export async function saveMeal(record: MealRecord, day: string) {
   const db = await databasePromise;
   await db.runAsync(
     `INSERT OR REPLACE INTO meal_records
-     (id, owner_id, meal_type, food_id, food_name, weight_g, calories, protein, fat, carb, day_key, recorded_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     (id, owner_id, meal_type, food_id, food_name, weight_g, portion_label, calories, protein, fat, carb, day_key, recorded_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     record.id,
     record.ownerId,
     record.mealType,
     record.foodId,
     record.foodName,
     record.weightG,
+    record.portionLabel ?? null,
     record.calories,
     record.protein,
     record.fat,
@@ -418,13 +468,15 @@ export async function exportSnapshot(ownerId: string): Promise<BackupSnapshot> {
   const db = await databasePromise;
   const [profile, customFoods, meals, exercises, weights, templates, reminders] = await Promise.all([
     getProfile(ownerId),
-    db.getAllAsync<FoodItem>(
-      `SELECT id, owner_id AS ownerId, name, calories, protein, fat, carb, is_common AS isCommon
+    db.getAllAsync<FoodItem & { servingsJson: string }>(
+      `SELECT id, owner_id AS ownerId, name, calories, protein, fat, carb,
+        is_common AS isCommon, servings_json AS servingsJson
        FROM food_items WHERE owner_id = ?`, ownerId,
     ),
     db.getAllAsync<MealRecord>(
       `SELECT id, owner_id AS ownerId, meal_type AS mealType, food_id AS foodId, food_name AS foodName,
-        weight_g AS weightG, calories, protein, fat, carb, recorded_at AS recordedAt, updated_at AS updatedAt
+        weight_g AS weightG, portion_label AS portionLabel, calories, protein, fat, carb,
+        recorded_at AS recordedAt, updated_at AS updatedAt
        FROM meal_records WHERE owner_id = ?`, ownerId,
     ),
     db.getAllAsync<ExerciseRecord>(
@@ -441,7 +493,11 @@ export async function exportSnapshot(ownerId: string): Promise<BackupSnapshot> {
     version: 1,
     exportedAt: new Date().toISOString(),
     profile,
-    customFoods: customFoods.map(item => ({ ...item, isCommon: Boolean(item.isCommon) })),
+    customFoods: customFoods.map(({ servingsJson, ...item }) => ({
+      ...item,
+      isCommon: Boolean(item.isCommon),
+      servings: JSON.parse(servingsJson || '[]'),
+    })),
     meals,
     exercises,
     weights,
@@ -457,8 +513,12 @@ export async function restoreSnapshot(ownerId: string, snapshot: BackupSnapshot)
       await db.runAsync(`DELETE FROM ${table} WHERE owner_id = ?`, ownerId);
     }
     if (snapshot.profile) await saveProfile({ ...snapshot.profile, ownerId });
-    for (const food of snapshot.customFoods) await saveCustomFood({ ...food, ownerId }, ownerId);
-    for (const meal of snapshot.meals) await saveMeal({ ...meal, ownerId }, meal.recordedAt.slice(0, 10));
+    for (const food of snapshot.customFoods) {
+      await saveCustomFood({ ...food, ownerId, servings: food.servings ?? [] }, ownerId);
+    }
+    for (const meal of snapshot.meals) {
+      await saveMeal({ ...meal, ownerId, portionLabel: meal.portionLabel ?? null }, meal.recordedAt.slice(0, 10));
+    }
     for (const exercise of snapshot.exercises) await saveExercise({ ...exercise, ownerId }, exercise.recordedAt.slice(0, 10));
     for (const weight of snapshot.weights) await saveWeight({ ...weight, ownerId });
     for (const template of snapshot.templates) await saveTemplate({ ...template, ownerId }, ownerId);

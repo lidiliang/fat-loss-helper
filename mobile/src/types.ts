@@ -35,6 +35,12 @@ export interface FoodItem {
   fat: number;
   carb: number;
   isCommon: boolean;
+  servings?: FoodServing[];
+}
+
+export interface FoodServing {
+  label: string;
+  grams: number;
 }
 
 export interface MealRecord {
@@ -44,6 +50,7 @@ export interface MealRecord {
   foodId: string;
   foodName: string;
   weightG: number;
+  portionLabel?: string | null;
   calories: number;
   protein: number;
   fat: number;

@@ -3,6 +3,7 @@ import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, 
 import { BUILT_IN_TEMPLATES } from '../data/seed';
 import { calculateExerciseCalories, calculateFoodNutrition, dateKey, randomId, summarizeDay } from '../lib/calculations';
 import {
+  deleteCustomFood as deleteCustomFoodDb,
   deleteExercise as deleteExerciseDb,
   deleteMeal as deleteMealDb,
   getExercises,
@@ -52,13 +53,14 @@ interface AppValue {
   setSelectedDate: (date: string) => void;
   refresh: () => Promise<void>;
   saveProfile: (profile: UserProfile) => Promise<void>;
-  addMeal: (food: FoodItem, weightG: number, mealType: MealType) => Promise<void>;
+  addMeal: (food: FoodItem, weightG: number, mealType: MealType, portionLabel?: string | null) => Promise<void>;
   addTemplate: (template: MealTemplate, mealType: MealType) => Promise<void>;
   deleteMeal: (id: string) => Promise<void>;
   addExercise: (type: string, met: number, durationMin: number, distanceKm?: number) => Promise<void>;
   deleteExercise: (id: string) => Promise<void>;
   addWeight: (weightKg: number, waistCm?: number) => Promise<void>;
   addCustomFood: (food: Omit<FoodItem, 'id' | 'ownerId'>) => Promise<void>;
+  deleteCustomFood: (id: string) => Promise<void>;
   createTemplateFromMeal: (mealType: MealType, name: string) => Promise<void>;
   saveReminders: (settings: ReminderSettings) => Promise<void>;
 }
@@ -138,14 +140,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       await saveProfileDb(nextProfile);
       setProfile(nextProfile);
     },
-    addMeal: async (food, weightG, mealType) => {
+    addMeal: async (food, weightG, mealType, portionLabel) => {
       const owner = ensureUser();
       const nutrition = calculateFoodNutrition(food, weightG);
       const now = new Date().toISOString();
       const recordedAt = `${selectedDate}T12:00:00`;
       await saveMeal({
         id: randomId('meal'), ownerId: owner.id, mealType, foodId: food.id, foodName: food.name,
-        weightG, ...nutrition, recordedAt, updatedAt: now,
+        weightG, portionLabel: portionLabel ?? null, ...nutrition, recordedAt, updatedAt: now,
       }, selectedDate);
       await refresh();
     },
@@ -199,6 +201,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     addCustomFood: async food => {
       const owner = ensureUser();
       await saveCustomFood({ ...food, id: randomId('food'), ownerId: owner.id }, owner.id);
+      await refresh();
+    },
+    deleteCustomFood: async id => {
+      const owner = ensureUser();
+      await deleteCustomFoodDb(id, owner.id);
       await refresh();
     },
     createTemplateFromMeal: async (mealType, name) => {
