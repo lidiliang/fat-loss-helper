@@ -355,7 +355,7 @@ export async function getReminders(ownerId: string): Promise<ReminderSettings> {
     breakfast: '07:30',
     lunch: '12:00',
     dinner: '18:30',
-    snack: '15:30',
+    snack: '',
     exercise: '19:30',
     exerciseDays: [1, 3, 5],
     updatedAt: new Date().toISOString(),

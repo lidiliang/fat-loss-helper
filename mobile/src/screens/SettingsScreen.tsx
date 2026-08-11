@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
-import { Alert, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import { Alert, Linking, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { AppText, Card, Chip, Field, Header, PrimaryButton, Screen, SectionTitle } from '../components/ui';
 import { ACTIVITY_LEVELS } from '../data/seed';
 import { calculateGoals } from '../lib/calculations';
@@ -121,7 +121,7 @@ export function SettingsScreen() {
         { text: '取消', style: 'cancel' },
         { text: '退出', style: 'destructive', onPress: () => logout() },
       ])} />
-      <AppText muted style={{ textAlign: 'center', fontSize: 10 }}>轻脂管家 v1.0.0 · com.qingzhi.fatlosshelper</AppText>
+      <AppText muted style={{ textAlign: 'center', fontSize: 10 }}>轻脂管家 v1.0.1 · com.qingzhi.fatlosshelper</AppText>
     </Screen>
   );
 }
@@ -175,11 +175,26 @@ function ReminderEditor({ settings }: { settings: ReminderSettings }) {
   const [saving, setSaving] = useState(false);
   const days = [{ v: 1, l: '一' }, { v: 2, l: '二' }, { v: 3, l: '三' }, { v: 4, l: '四' }, { v: 5, l: '五' }, { v: 6, l: '六' }, { v: 0, l: '日' }];
   const save = async () => {
-    const values = [draft.breakfast, draft.lunch, draft.dinner, draft.snack, draft.exercise];
-    if (values.some(value => !/^([01]\d|2[0-3]):[0-5]\d$/.test(value))) return Alert.alert('时间格式不正确', '请使用 07:30 这样的 24 小时格式。');
+    const timeFields = [
+      { label: '早餐', value: draft.breakfast.trim() },
+      { label: '午餐', value: draft.lunch.trim() },
+      { label: '晚餐', value: draft.dinner.trim() },
+      { label: '加餐', value: draft.snack.trim() },
+      { label: '运动', value: draft.exercise.trim() },
+    ];
+    const invalid = timeFields.find(item => item.value && !/^([01]\d|2[0-3]):[0-5]\d$/.test(item.value));
+    if (invalid) return Alert.alert(`${invalid.label}时间格式不正确`, '请使用 07:30 这样的 24 小时格式，或留空关闭该项提醒。');
     setSaving(true);
     try {
-      const next = { ...draft, updatedAt: new Date().toISOString() };
+      const next = {
+        ...draft,
+        breakfast: draft.breakfast.trim(),
+        lunch: draft.lunch.trim(),
+        dinner: draft.dinner.trim(),
+        snack: draft.snack.trim(),
+        exercise: draft.exercise.trim(),
+        updatedAt: new Date().toISOString(),
+      };
       await app.saveReminders(next);
       Alert.alert('提醒已更新', next.enabled ? '新的本地提醒已安排。' : '所有本地提醒已关闭。');
     } catch (error) {
@@ -195,14 +210,20 @@ function ReminderEditor({ settings }: { settings: ReminderSettings }) {
       </View>
       {draft.enabled ? (
         <>
-          <View style={styles.buttonRow}><Field label="早餐" value={draft.breakfast} onChangeText={breakfast => setDraft({ ...draft, breakfast })} keyboardType="numbers-and-punctuation" /><Field label="午餐" value={draft.lunch} onChangeText={lunch => setDraft({ ...draft, lunch })} keyboardType="numbers-and-punctuation" /></View>
-          <View style={styles.buttonRow}><Field label="晚餐" value={draft.dinner} onChangeText={dinner => setDraft({ ...draft, dinner })} keyboardType="numbers-and-punctuation" /><Field label="加餐" value={draft.snack} onChangeText={snack => setDraft({ ...draft, snack })} keyboardType="numbers-and-punctuation" /></View>
-          <Field label="运动计划时间" value={draft.exercise} onChangeText={exercise => setDraft({ ...draft, exercise })} keyboardType="numbers-and-punctuation" />
+          <AppText muted style={{ fontSize: 11, lineHeight: 17 }}>只填写需要的提醒时间；任一项留空即关闭该项提醒。</AppText>
+          <View style={styles.buttonRow}><Field label="早餐（可选）" value={draft.breakfast} placeholder="留空则不提醒" onChangeText={breakfast => setDraft({ ...draft, breakfast })} keyboardType="numbers-and-punctuation" /><Field label="午餐（可选）" value={draft.lunch} placeholder="留空则不提醒" onChangeText={lunch => setDraft({ ...draft, lunch })} keyboardType="numbers-and-punctuation" /></View>
+          <View style={styles.buttonRow}><Field label="晚餐（可选）" value={draft.dinner} placeholder="留空则不提醒" onChangeText={dinner => setDraft({ ...draft, dinner })} keyboardType="numbers-and-punctuation" /><Field label="加餐（可选）" value={draft.snack} placeholder="留空则不提醒" onChangeText={snack => setDraft({ ...draft, snack })} keyboardType="numbers-and-punctuation" /></View>
+          <Field label="运动计划时间（可选）" value={draft.exercise} placeholder="留空则不提醒" onChangeText={exercise => setDraft({ ...draft, exercise })} keyboardType="numbers-and-punctuation" />
           <AppText muted style={{ fontSize: 11, fontWeight: '700' }}>运动日</AppText>
           <View style={styles.chipRow}>{days.map(day => <Chip key={day.v} label={`周${day.l}`} small selected={draft.exerciseDays.includes(day.v)} onPress={() => setDraft({ ...draft, exerciseDays: draft.exerciseDays.includes(day.v) ? draft.exerciseDays.filter(v => v !== day.v) : [...draft.exerciseDays, day.v] })} />)}</View>
         </>
       ) : null}
       <PrimaryButton label="保存提醒设置" onPress={save} loading={saving} />
+      <View style={[styles.infoBox, { backgroundColor: colors.surfaceMuted, gap: 8 }]}>
+        <Text style={[styles.settingTitle, { color: colors.text }]}>关于后台运行</Text>
+        <AppText muted style={{ fontSize: 10, lineHeight: 16 }}>提醒由安卓系统调度，不要求应用常驻内存。若手机仍延迟提醒，请在系统设置中允许通知、闹钟与提醒，并把电池策略设为“不受限制”；部分品牌还需允许自启动。</AppText>
+        <PrimaryButton label="打开系统权限设置" onPress={() => Linking.openSettings()} secondary compact />
+      </View>
     </Card>
   );
 }

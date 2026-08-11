@@ -37,8 +37,6 @@ export async function requestNotificationPermission() {
 export async function scheduleReminders(settings: ReminderSettings) {
   await Notifications.cancelAllScheduledNotificationsAsync();
   if (!settings.enabled) return;
-  const allowed = await requestNotificationPermission();
-  if (!allowed) throw new Error('通知权限未开启，请在系统设置中允许通知');
 
   const meals: Array<{ key: keyof ReminderSettings; title: string; body: string }> = [
     { key: 'breakfast', title: '早餐前的小准备 🌿', body: '还有 30 分钟到早餐，记得按计划选择并记录食物。' },
@@ -46,22 +44,31 @@ export async function scheduleReminders(settings: ReminderSettings) {
     { key: 'dinner', title: '晚餐前看一眼预算', body: '根据今天的摄入，给晚餐留出合适空间。' },
     { key: 'snack', title: '加餐前先确认', body: '是真饿还是嘴馋？记录后再做决定也不迟。' },
   ];
-  for (const meal of meals) {
-    const time = parseTime(String(settings[meal.key]), 30);
+  const activeMeals = meals.filter(meal => String(settings[meal.key]).trim());
+  const exercise = settings.exercise.trim();
+  const hasExerciseReminder = Boolean(exercise && settings.exerciseDays.length);
+  if (!activeMeals.length && !hasExerciseReminder) return;
+
+  const allowed = await requestNotificationPermission();
+  if (!allowed) throw new Error('通知权限未开启，请在系统设置中允许通知');
+
+  for (const meal of activeMeals) {
+    const time = parseTime(String(settings[meal.key]).trim(), 30);
     await Notifications.scheduleNotificationAsync({
       content: { title: meal.title, body: meal.body, data: { screen: 'record' } },
       trigger: { type: Notifications.SchedulableTriggerInputTypes.DAILY, ...time, channelId: CHANNEL_ID },
     });
   }
 
-  const exerciseTime = parseTime(settings.exercise, 60);
+  if (!hasExerciseReminder) return;
+  const exerciseTime = parseTime(exercise, 60);
   for (const day of settings.exerciseDays) {
     // Expo/Android 周日为 1，因此将业务层周日 0 转成 1。
     const weekday = day === 0 ? 1 : day + 1;
     await Notifications.scheduleNotificationAsync({
       content: {
         title: '今天有运动计划 💪',
-        body: `计划 ${settings.exercise} 开始运动，提前补水并准备好装备。`,
+        body: `计划 ${exercise} 开始运动，提前补水并准备好装备。`,
         data: { screen: 'record', kind: 'exercise' },
       },
       trigger: {
