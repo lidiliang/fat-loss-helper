@@ -1,15 +1,15 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Alert, Linking, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { AppText, Card, Chip, Field, Header, PrimaryButton, Screen, SectionTitle } from '../components/ui';
-import { ACTIVITY_LEVELS } from '../data/seed';
+import { ACTIVITY_LEVELS, FATTY_LIVER_LEVELS } from '../data/seed';
 import { calculateGoals } from '../lib/calculations';
 import { API_URL } from '../lib/api';
 import { getSyncStatus } from '../lib/database';
 import { backupNow, restoreLatestBackup } from '../lib/sync';
 import { useAuth } from '../context/AuthContext';
 import { useApp } from '../context/AppContext';
-import { ActivityLevel, Gender, ReminderSettings } from '../types';
+import { ActivityLevel, FattyLiverLevel, Gender, ReminderSettings } from '../types';
 import { useColors } from '../theme';
 
 export function SettingsScreen() {
@@ -79,6 +79,7 @@ export function SettingsScreen() {
         <View style={styles.goalTiles}>
           <GoalTile label="热量目标" value={`${profile.calorieGoal} kcal`} />
           <GoalTile label="目标体重" value={`${profile.targetWeightKg} kg`} />
+          <GoalTile label="脂肪肝" value={fattyLiverLabel(profile.fattyLiverLevel)} />
         </View>
       )}
 
@@ -138,31 +139,45 @@ function ProfileEditor({ onDone }: { onDone: () => void }) {
   const [targetWeight, setTargetWeight] = useState(String(profile.targetWeightKg));
   const [weeklyLoss, setWeeklyLoss] = useState(String(profile.weeklyLossKg));
   const [activity, setActivity] = useState<ActivityLevel>(profile.activityLevel);
+  const [fattyLiverLevel, setFattyLiverLevel] = useState<FattyLiverLevel>(profile.fattyLiverLevel ?? 'none');
   const [saving, setSaving] = useState(false);
+  const goals = useMemo(() => calculateGoals({
+    gender,
+    age: Number(age),
+    heightCm: Number(height),
+    weightKg: Number(weight),
+    activityLevel: activity,
+    weeklyLossKg: Number(weeklyLoss),
+    fattyLiverLevel,
+  }), [gender, age, height, weight, activity, weeklyLoss, fattyLiverLevel]);
   const submit = async () => {
     if ([age, height, weight, waist, targetWeight].some(value => Number(value) <= 0)) return Alert.alert('请检查输入');
-    const goals = calculateGoals({ gender, age: Number(age), heightCm: Number(height), weightKg: Number(weight), activityLevel: activity, weeklyLossKg: Number(weeklyLoss) });
     setSaving(true);
     try {
       await app.saveProfile({
         ...profile, gender, age: Number(age), heightCm: Number(height), weightKg: Number(weight), waistCm: Number(waist),
-        targetWeightKg: Number(targetWeight), weeklyLossKg: Number(weeklyLoss), activityLevel: activity,
+        targetWeightKg: Number(targetWeight), weeklyLossKg: Number(weeklyLoss), activityLevel: activity, fattyLiverLevel,
         calorieGoal: goals.calorieGoal, proteinGoal: goals.proteinGoal, fatGoal: goals.fatGoal, carbGoal: goals.carbGoal,
         updatedAt: new Date().toISOString(),
       });
       onDone();
-      Alert.alert('目标已更新', `新的每日热量目标为 ${goals.calorieGoal} kcal。`);
+      Alert.alert('目标已更新', `新的每日目标：${goals.calorieGoal} kcal，蛋白质 ${goals.proteinGoal}g，脂肪 ${goals.fatGoal}g，碳水 ${goals.carbGoal}g。`);
     } finally { setSaving(false); }
   };
   return (
     <Card style={{ gap: 15 }}>
       <View style={styles.chipRow}><Chip label="男性" selected={gender === 'male'} onPress={() => setGender('male')} /><Chip label="女性" selected={gender === 'female'} onPress={() => setGender('female')} /></View>
+      <AppText muted style={{ fontSize: 11, fontWeight: '700' }}>脂肪肝情况（以体检或医生结论为准）</AppText>
+      <View style={styles.chipRow}>{FATTY_LIVER_LEVELS.map(item => <Chip key={item.value} label={item.label} selected={fattyLiverLevel === item.value} onPress={() => setFattyLiverLevel(item.value)} small />)}</View>
       <View style={styles.buttonRow}><Field label="年龄" value={age} onChangeText={setAge} keyboardType="number-pad" suffix="岁" /><Field label="身高" value={height} onChangeText={setHeight} keyboardType="decimal-pad" suffix="cm" /></View>
       <View style={styles.buttonRow}><Field label="体重" value={weight} onChangeText={setWeight} keyboardType="decimal-pad" suffix="kg" /><Field label="腰围" value={waist} onChangeText={setWaist} keyboardType="decimal-pad" suffix="cm" /></View>
       <View style={styles.buttonRow}><Field label="目标体重" value={targetWeight} onChangeText={setTargetWeight} keyboardType="decimal-pad" suffix="kg" /><Field label="每周减重" value={weeklyLoss} onChangeText={setWeeklyLoss} keyboardType="decimal-pad" suffix="kg" /></View>
       <AppText muted style={{ fontSize: 11, fontWeight: '700' }}>活动水平</AppText>
       <View style={styles.chipRow}>{ACTIVITY_LEVELS.map(item => <Chip key={item.value} label={item.label} selected={activity === item.value} onPress={() => setActivity(item.value)} small />)}</View>
-      <View style={[styles.infoBox, { backgroundColor: colors.primarySoft }]}><Text style={{ color: colors.primaryDark, fontSize: 11 }}>保存后将使用 Mifflin–St Jeor 公式重新计算目标。</Text></View>
+      <View style={[styles.infoBox, { backgroundColor: colors.primarySoft, gap: 5 }]}>
+        <Text style={{ color: colors.primaryDark, fontSize: 11, fontWeight: '700' }}>预览：{goals.calorieGoal} kcal · 蛋白质 {goals.proteinGoal}g · 脂肪 {goals.fatGoal}g · 碳水 {goals.carbGoal}g</Text>
+        <Text style={{ color: colors.primaryDark, fontSize: 10, lineHeight: 15 }}>BMR 仍使用 Mifflin–St Jeor；脂肪肝程度只调整宏量营养比例。保存后立即更新每日目标。</Text>
+      </View>
       <PrimaryButton label="重新计算并保存" onPress={submit} loading={saving} />
     </Card>
   );
@@ -233,15 +248,19 @@ function GoalTile({ label, value }: { label: string; value: string }) {
   return <View style={[styles.goalTile, { backgroundColor: colors.surface, borderColor: colors.border }]}><Text style={[styles.goalLabel, { color: colors.textMuted }]}>{label}</Text><Text style={[styles.goalValue, { color: colors.text }]}>{value}</Text></View>;
 }
 
+function fattyLiverLabel(level: FattyLiverLevel) {
+  return FATTY_LIVER_LEVELS.find(item => item.value === level)?.label ?? '无';
+}
+
 const styles = StyleSheet.create({
   accountCard: { flexDirection: 'row', alignItems: 'center', gap: 13 },
   accountAvatar: { width: 50, height: 50, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   accountName: { fontSize: 17, fontWeight: '900' },
   accountEmail: { fontSize: 11, marginTop: 4 },
-  goalTiles: { flexDirection: 'row', gap: 10 },
+  goalTiles: { flexDirection: 'row', gap: 8 },
   goalTile: { flex: 1, borderWidth: 1, borderRadius: 17, padding: 15, gap: 5 },
   goalLabel: { fontSize: 10, fontWeight: '700' },
-  goalValue: { fontSize: 18, fontWeight: '900' },
+  goalValue: { fontSize: 16, fontWeight: '900' },
   settingRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   settingIcon: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   settingTitle: { fontSize: 13, fontWeight: '800' },

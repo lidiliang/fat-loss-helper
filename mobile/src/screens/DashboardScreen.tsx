@@ -1,8 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, Text, View } from 'react-native';
 import { Card, Header, PrimaryButton, ProgressBar, Screen, SectionTitle } from '../components/ui';
-import { MEAL_LABELS } from '../data/seed';
-import { dateKey, getMealRecommendation } from '../lib/calculations';
+import { FATTY_LIVER_LEVELS, MEAL_LABELS } from '../data/seed';
+import { calculateGoals, dateKey, getMealRecommendation, getSaturatedFatLimit } from '../lib/calculations';
 import { useApp } from '../context/AppContext';
 import { RootTab } from '../types';
 import { useColors } from '../theme';
@@ -14,6 +14,15 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (tab: RootTab) => 
 
   const mealCount = new Set(meals.map(item => item.mealType)).size;
   const recommendation = getMealRecommendation(profile, summary, mealCount);
+  const goalComparison = calculateGoals({
+    gender: profile.gender,
+    age: profile.age,
+    heightCm: profile.heightCm,
+    weightKg: profile.weightKg,
+    activityLevel: profile.activityLevel,
+    weeklyLossKg: profile.weeklyLossKg,
+    fattyLiverLevel: profile.fattyLiverLevel,
+  });
   const remaining = Math.max(0, profile.calorieGoal - summary.calories);
   const todayLabel = selectedDate === dateKey() ? '今天' : selectedDate;
 
@@ -44,6 +53,16 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (tab: RootTab) => 
         <MacroCard label="脂肪" value={summary.fat} goal={profile.fatGoal} unit="g" color={colors.orange} />
       </View>
 
+      {profile.fattyLiverLevel !== 'none' ? (
+        <View style={[styles.goalComparison, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <View style={[styles.goalComparisonIcon, { backgroundColor: colors.primarySoft }]}><Ionicons name="shield-checkmark-outline" size={17} color={colors.primary} /></View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.goalComparisonTitle, { color: colors.text }]}>{FATTY_LIVER_LEVELS.find(item => item.value === profile.fattyLiverLevel)?.label}脂肪肝护肝目标已启用</Text>
+            <Text style={[styles.goalComparisonText, { color: colors.textMuted }]}>普通脂肪 {goalComparison.standardFatGoal}g → 推荐 {profile.fatGoal}g；蛋白质 {goalComparison.standardProteinGoal}g → {profile.proteinGoal}g</Text>
+          </View>
+        </View>
+      ) : null}
+
       <Card style={{ gap: 14, backgroundColor: colors.primarySoft }}>
         <View style={styles.recommendTitle}>
           <View style={[styles.recommendIcon, { backgroundColor: colors.surface }]}>
@@ -56,6 +75,10 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (tab: RootTab) => 
         </View>
         <Text style={[styles.recommendText, { color: colors.text }]}>{recommendation.message}</Text>
         <Text style={[styles.limit, { color: colors.textMuted }]}>建议脂肪不超过 {recommendation.fat}g</Text>
+        <View style={[styles.liverHint, { backgroundColor: colors.surface }]}>
+          <Ionicons name="leaf-outline" size={15} color={colors.primary} />
+          <Text style={[styles.liverHintText, { color: colors.textMuted }]}>饱和脂肪建议 ≤ {getSaturatedFatLimit(profile.fatGoal)}g/天；少用猪油、黄油和肥肉，优先鱼类、少量坚果及植物油。</Text>
+        </View>
       </Card>
 
       <SectionTitle title="今日记录" />
@@ -129,12 +152,18 @@ const styles = StyleSheet.create({
   macroValue: { fontSize: 21, fontWeight: '900' },
   macroUnit: { fontSize: 10, fontWeight: '600' },
   macroGoal: { fontSize: 9 },
+  goalComparison: { borderWidth: 1, borderRadius: 16, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  goalComparisonIcon: { width: 35, height: 35, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  goalComparisonTitle: { fontSize: 11.5, fontWeight: '800' },
+  goalComparisonText: { fontSize: 9.5, lineHeight: 15, marginTop: 2 },
   recommendTitle: { flexDirection: 'row', alignItems: 'center', gap: 11 },
   recommendIcon: { width: 38, height: 38, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   recommendEyebrow: { fontSize: 11, fontWeight: '800' },
   recommendBudget: { fontSize: 15, fontWeight: '800', marginTop: 2 },
   recommendText: { fontSize: 13, lineHeight: 20 },
   limit: { fontSize: 11 },
+  liverHint: { borderRadius: 13, padding: 11, flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  liverHintText: { flex: 1, fontSize: 10.5, lineHeight: 16 },
   noRecords: { padding: 30, alignItems: 'center', gap: 6 },
   noRecordTitle: { fontSize: 15, fontWeight: '800' },
   noRecordDetail: { fontSize: 12, textAlign: 'center' },

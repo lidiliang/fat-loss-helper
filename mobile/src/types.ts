@@ -1,6 +1,7 @@
 export type Gender = 'male' | 'female';
 export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
 export type ActivityLevel = 'sedentary' | 'light' | 'moderate' | 'active' | 'very_active';
+export type FattyLiverLevel = 'none' | 'mild' | 'moderate' | 'severe';
 
 export interface SessionUser {
   id: string;
@@ -16,6 +17,7 @@ export interface UserProfile {
   heightCm: number;
   weightKg: number;
   waistCm: number;
+  fattyLiverLevel: FattyLiverLevel;
   activityLevel: ActivityLevel;
   weeklyLossKg: number;
   targetWeightKg: number;

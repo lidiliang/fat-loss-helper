@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
-import { ACTIVITY_LEVELS } from '../data/seed';
-import { calculateGoals } from '../lib/calculations';
-import { ActivityLevel, Gender, UserProfile } from '../types';
+import { ACTIVITY_LEVELS, FATTY_LIVER_LEVELS } from '../data/seed';
+import { calculateGoals, getSaturatedFatLimit } from '../lib/calculations';
+import { ActivityLevel, FattyLiverLevel, Gender, UserProfile } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { useApp } from '../context/AppContext';
 import { AppText, Card, Chip, Field, Header, PrimaryButton, Screen } from '../components/ui';
@@ -20,6 +20,7 @@ export function OnboardingScreen() {
   const [targetWeight, setTargetWeight] = useState('70');
   const [weeklyLoss, setWeeklyLoss] = useState('0.5');
   const [activity, setActivity] = useState<ActivityLevel>('light');
+  const [fattyLiverLevel, setFattyLiverLevel] = useState<FattyLiverLevel>('none');
   const [saving, setSaving] = useState(false);
 
   const goals = useMemo(() => calculateGoals({
@@ -29,7 +30,8 @@ export function OnboardingScreen() {
     weightKg: Number(weight) || 0,
     activityLevel: activity,
     weeklyLossKg: Number(weeklyLoss) || 0,
-  }), [gender, age, height, weight, activity, weeklyLoss]);
+    fattyLiverLevel,
+  }), [gender, age, height, weight, activity, weeklyLoss, fattyLiverLevel]);
 
   const submit = async () => {
     if (!user) return;
@@ -47,6 +49,7 @@ export function OnboardingScreen() {
       heightCm: Number(height),
       weightKg: Number(weight),
       waistCm: Number(waist),
+      fattyLiverLevel,
       activityLevel: activity,
       weeklyLossKg: Number(weeklyLoss),
       targetWeightKg: Number(targetWeight),
@@ -85,6 +88,12 @@ export function OnboardingScreen() {
           <Field label="当前体重" value={weight} onChangeText={setWeight} keyboardType="decimal-pad" suffix="kg" />
           <Field label="腰围" value={waist} onChangeText={setWaist} keyboardType="decimal-pad" suffix="cm" />
         </View>
+        <AppText muted style={styles.label}>脂肪肝情况（以体检或医生结论为准）</AppText>
+        <View style={styles.wrap}>
+          {FATTY_LIVER_LEVELS.map(item => (
+            <Chip key={item.value} label={item.label} selected={fattyLiverLevel === item.value} onPress={() => setFattyLiverLevel(item.value)} small />
+          ))}
+        </View>
       </Card>
 
       <Card style={{ gap: 17 }}>
@@ -112,6 +121,14 @@ export function OnboardingScreen() {
           <Goal label="脂肪" value={`${goals.fatGoal}g`} />
           <Goal label="碳水" value={`${goals.carbGoal}g`} />
         </View>
+        {fattyLiverLevel !== 'none' ? (
+          <View style={styles.standardComparison}>
+            <Text style={styles.comparisonTitle}>已按{FATTY_LIVER_LEVELS.find(item => item.value === fattyLiverLevel)?.label}脂肪肝调整宏量比例，BMR 与总热量不变</Text>
+            <Text style={styles.comparisonText}>普通参考：蛋白质 {goals.standardProteinGoal}g · 脂肪 {goals.standardFatGoal}g · 碳水 {goals.standardCarbGoal}g</Text>
+            <Text style={styles.comparisonText}>护肝推荐：蛋白质 {goals.proteinGoal}g · 脂肪 {goals.fatGoal}g · 碳水 {goals.carbGoal}g</Text>
+          </View>
+        ) : null}
+        <Text style={styles.fatQualityHint}>护肝提示：饱和脂肪建议 ≤ {getSaturatedFatLimit(goals.fatGoal)}g/天（约为总脂肪的 1/3）</Text>
       </View>
 
       <AppText muted style={styles.disclaimer}>热量下限与缺口经过安全限制；脂肪肝相关建议仅供生活方式管理参考，不替代医生或营养师的诊疗意见。</AppText>
@@ -140,6 +157,10 @@ const styles = StyleSheet.create({
   goalUnit: { fontSize: 15, fontWeight: '700' },
   goalMeta: { color: '#D8F0E3', fontSize: 11, marginTop: 5 },
   macroRow: { flexDirection: 'row', justifyContent: 'space-between', paddingTop: 17, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#FFFFFF55' },
+  fatQualityHint: { color: '#D8F0E3', fontSize: 10.5, lineHeight: 16 },
+  standardComparison: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#FFFFFF55', paddingTop: 14, gap: 4 },
+  comparisonTitle: { color: '#fff', fontSize: 10.5, lineHeight: 16, fontWeight: '700' },
+  comparisonText: { color: '#D8F0E3', fontSize: 10, lineHeight: 15 },
   goalLabel: { color: '#D8F0E3', fontSize: 11 },
   goalValue: { color: '#fff', fontSize: 17, fontWeight: '800' },
   disclaimer: { fontSize: 11, lineHeight: 17, textAlign: 'center', paddingHorizontal: 8 },

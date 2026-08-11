@@ -27,6 +27,7 @@ export async function initDatabase() {
       height_cm REAL NOT NULL,
       weight_kg REAL NOT NULL,
       waist_cm REAL NOT NULL,
+      fatty_liver_level TEXT NOT NULL DEFAULT 'none',
       activity_level TEXT NOT NULL,
       weekly_loss_kg REAL NOT NULL,
       target_weight_kg REAL NOT NULL,
@@ -125,13 +126,18 @@ export async function initDatabase() {
   if (!mealColumns.some(column => column.name === 'portion_label')) {
     await db.execAsync('ALTER TABLE meal_records ADD COLUMN portion_label TEXT');
   }
+  const profileColumns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(profiles)');
+  if (!profileColumns.some(column => column.name === 'fatty_liver_level')) {
+    await db.execAsync("ALTER TABLE profiles ADD COLUMN fatty_liver_level TEXT NOT NULL DEFAULT 'none'");
+  }
 }
 
 export async function getProfile(ownerId: string): Promise<UserProfile | null> {
   const db = await databasePromise;
   return db.getFirstAsync<UserProfile>(
     `SELECT owner_id AS ownerId, name, gender, age, height_cm AS heightCm,
-      weight_kg AS weightKg, waist_cm AS waistCm, activity_level AS activityLevel,
+      weight_kg AS weightKg, waist_cm AS waistCm, fatty_liver_level AS fattyLiverLevel,
+      activity_level AS activityLevel,
       weekly_loss_kg AS weeklyLossKg, target_weight_kg AS targetWeightKg,
       calorie_goal AS calorieGoal, protein_goal AS proteinGoal, fat_goal AS fatGoal,
       carb_goal AS carbGoal, updated_at AS updatedAt
@@ -143,10 +149,15 @@ export async function getProfile(ownerId: string): Promise<UserProfile | null> {
 export async function saveProfile(profile: UserProfile) {
   const db = await databasePromise;
   await db.runAsync(
-    `INSERT INTO profiles VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO profiles
+     (owner_id, name, gender, age, height_cm, weight_kg, waist_cm, fatty_liver_level,
+      activity_level, weekly_loss_kg, target_weight_kg, calorie_goal, protein_goal,
+      fat_goal, carb_goal, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(owner_id) DO UPDATE SET name=excluded.name, gender=excluded.gender,
        age=excluded.age, height_cm=excluded.height_cm, weight_kg=excluded.weight_kg,
-       waist_cm=excluded.waist_cm, activity_level=excluded.activity_level,
+       waist_cm=excluded.waist_cm, fatty_liver_level=excluded.fatty_liver_level,
+       activity_level=excluded.activity_level,
        weekly_loss_kg=excluded.weekly_loss_kg, target_weight_kg=excluded.target_weight_kg,
        calorie_goal=excluded.calorie_goal, protein_goal=excluded.protein_goal,
        fat_goal=excluded.fat_goal, carb_goal=excluded.carb_goal, updated_at=excluded.updated_at`,
@@ -157,6 +168,7 @@ export async function saveProfile(profile: UserProfile) {
     profile.heightCm,
     profile.weightKg,
     profile.waistCm,
+    profile.fattyLiverLevel ?? 'none',
     profile.activityLevel,
     profile.weeklyLossKg,
     profile.targetWeightKg,
@@ -512,7 +524,9 @@ export async function restoreSnapshot(ownerId: string, snapshot: BackupSnapshot)
     for (const table of ['profiles', 'food_items', 'meal_records', 'exercise_records', 'weight_records', 'meal_templates', 'reminder_settings']) {
       await db.runAsync(`DELETE FROM ${table} WHERE owner_id = ?`, ownerId);
     }
-    if (snapshot.profile) await saveProfile({ ...snapshot.profile, ownerId });
+    if (snapshot.profile) {
+      await saveProfile({ ...snapshot.profile, ownerId, fattyLiverLevel: snapshot.profile.fattyLiverLevel ?? 'none' });
+    }
     for (const food of snapshot.customFoods) {
       await saveCustomFood({ ...food, ownerId, servings: food.servings ?? [] }, ownerId);
     }

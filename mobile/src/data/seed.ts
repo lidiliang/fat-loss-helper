@@ -1,4 +1,4 @@
-import { ActivityLevel, FoodItem, MealTemplate } from '../types';
+import { ActivityLevel, FattyLiverLevel, FoodItem, MealTemplate } from '../types';
 
 export const MEAL_LABELS = {
   breakfast: '早餐',
@@ -13,6 +13,13 @@ export const ACTIVITY_LEVELS: Array<{ value: ActivityLevel; label: string; facto
   { value: 'moderate', label: '中度活动', factor: 1.55 },
   { value: 'active', label: '高强度活动', factor: 1.725 },
   { value: 'very_active', label: '非常活跃', factor: 1.9 },
+];
+
+export const FATTY_LIVER_LEVELS: Array<{ value: FattyLiverLevel; label: string }> = [
+  { value: 'none', label: '无' },
+  { value: 'mild', label: '轻度' },
+  { value: 'moderate', label: '中度' },
+  { value: 'severe', label: '重度' },
 ];
 
 export const COMMON_FOODS: FoodItem[] = [

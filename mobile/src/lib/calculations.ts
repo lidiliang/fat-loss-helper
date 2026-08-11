@@ -1,5 +1,12 @@
 import { ACTIVITY_LEVELS } from '../data/seed';
-import { DailySummary, ExerciseRecord, Gender, MealRecord, UserProfile } from '../types';
+import { DailySummary, ExerciseRecord, FattyLiverLevel, Gender, MealRecord, UserProfile } from '../types';
+
+const MACRO_SPLITS: Record<FattyLiverLevel, { protein: number; fat: number; carb: number }> = {
+  none: { protein: 0.25, fat: 0.25, carb: 0.5 },
+  mild: { protein: 0.27, fat: 0.23, carb: 0.5 },
+  moderate: { protein: 0.28, fat: 0.22, carb: 0.5 },
+  severe: { protein: 0.3, fat: 0.2, carb: 0.5 },
+};
 
 export function calculateGoals(input: {
   gender: Gender;
@@ -8,6 +15,7 @@ export function calculateGoals(input: {
   weightKg: number;
   activityLevel: UserProfile['activityLevel'];
   weeklyLossKg: number;
+  fattyLiverLevel?: FattyLiverLevel;
 }) {
   const genderOffset = input.gender === 'male' ? 5 : -161;
   const bmr = 10 * input.weightKg + 6.25 * input.heightCm - 5 * input.age + genderOffset;
@@ -17,15 +25,32 @@ export function calculateGoals(input: {
   const maxSafeDeficit = tdee * 0.3;
   const minimumCalories = input.gender === 'male' ? 1500 : 1200;
   const calorieGoal = Math.round(Math.max(minimumCalories, tdee - Math.min(requestedDeficit, maxSafeDeficit)));
-  // 脂肪肝生活方式管理：蛋白质 25%、脂肪 25%、碳水 50%，不是医疗处方。
+  const split = MACRO_SPLITS[input.fattyLiverLevel ?? 'none'];
+  const standardSplit = MACRO_SPLITS.none;
   return {
     bmr: Math.round(bmr),
     tdee: Math.round(tdee),
     calorieGoal,
-    proteinGoal: Math.round((calorieGoal * 0.25) / 4),
-    fatGoal: Math.round((calorieGoal * 0.25) / 9),
-    carbGoal: Math.round((calorieGoal * 0.5) / 4),
+    proteinGoal: Math.round((calorieGoal * split.protein) / 4),
+    fatGoal: Math.round((calorieGoal * split.fat) / 9),
+    carbGoal: Math.round((calorieGoal * split.carb) / 4),
+    standardProteinGoal: Math.round((calorieGoal * standardSplit.protein) / 4),
+    standardFatGoal: Math.round((calorieGoal * standardSplit.fat) / 9),
+    standardCarbGoal: Math.round((calorieGoal * standardSplit.carb) / 4),
+    macroSplit: {
+      protein: Math.round(split.protein * 100),
+      fat: Math.round(split.fat * 100),
+      carb: Math.round(split.carb * 100),
+    },
   };
+}
+
+/**
+ * Lifestyle guidance for fat quality. This is a derived target only: meal
+ * records currently track total fat, not saturated fat as a separate nutrient.
+ */
+export function getSaturatedFatLimit(fatGoal: number) {
+  return Math.max(0, Math.min(15, Math.floor(fatGoal / 3)));
 }
 
 export function calculateFoodNutrition(food: { calories: number; protein: number; fat: number; carb: number }, weightG: number) {
