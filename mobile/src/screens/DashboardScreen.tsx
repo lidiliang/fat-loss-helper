@@ -10,7 +10,7 @@ import { useColors } from '../theme';
 
 export function DashboardScreen({ onNavigate }: { onNavigate: (tab: RootTab) => void }) {
   const colors = useColors();
-  const { profile, foods, foodPreferences, meals, exercises, summary, selectedDate, reminders, addTemplate } = useApp();
+  const { profile, foods, foodPreferences, meals, exercises, summary, selectedDate, reminders, addTemplate, setSelectedDate } = useApp();
   if (!profile) return null;
 
   const plannedMealTypes: MealType[] = reminders?.snack.trim()
@@ -31,7 +31,20 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (tab: RootTab) => 
     fattyLiverLevel: profile.fattyLiverLevel,
   });
   const remaining = Math.max(0, profile.calorieGoal - summary.calories);
-  const todayLabel = selectedDate === dateKey() ? '今天' : selectedDate;
+  const isToday = selectedDate === dateKey();
+  const todayLabel = isToday ? '今天' : selectedDate;
+  const macroEnergy = summary.protein * 4 + summary.carb * 4 + summary.fat * 9;
+  const macroShares = {
+    protein: macroEnergy ? Math.round(summary.protein * 4 / macroEnergy * 100) : 0,
+    carb: macroEnergy ? Math.round(summary.carb * 4 / macroEnergy * 100) : 0,
+    fat: macroEnergy ? Math.max(0, 100 - Math.round(summary.protein * 4 / macroEnergy * 100) - Math.round(summary.carb * 4 / macroEnergy * 100)) : 0,
+  };
+
+  const moveDate = (days: number) => {
+    const date = new Date(`${selectedDate}T12:00:00`);
+    date.setDate(date.getDate() + days);
+    setSelectedDate(dateKey(date));
+  };
 
   const confirmMiniMeal = (item: MiniMealRecommendation) => {
     Alert.alert(
@@ -54,15 +67,28 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (tab: RootTab) => 
   return (
     <Screen>
       <Header
-        eyebrow="轻脂管家 · 今日"
+        eyebrow={`轻脂管家 · ${todayLabel}`}
         title={`你好，${profile.name}`}
         subtitle={`${todayLabel}也不用追求完美，完成一次真实记录就很好。`}
         right={<View style={[styles.avatar, { backgroundColor: colors.primarySoft }]}><Text style={{ fontSize: 23 }}>🌿</Text></View>}
       />
 
+      <View style={[styles.dateNav, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <Pressable onPress={() => moveDate(-1)} hitSlop={12} accessibilityLabel="查看前一天">
+          <Ionicons name="chevron-back" size={20} color={colors.text} />
+        </Pressable>
+        <Pressable disabled={isToday} onPress={() => setSelectedDate(dateKey())} style={{ alignItems: 'center' }} accessibilityLabel="返回今天">
+          <Text style={[styles.dateText, { color: colors.text }]}>{todayLabel}</Text>
+          <Text style={[styles.dateHint, { color: colors.textMuted }]}>{isToday ? selectedDate : '历史摄入复盘 · 点此回今天'}</Text>
+        </Pressable>
+        <Pressable disabled={isToday} onPress={() => moveDate(1)} hitSlop={12} accessibilityLabel="查看后一天" style={{ opacity: isToday ? 0.25 : 1 }}>
+          <Ionicons name="chevron-forward" size={20} color={colors.text} />
+        </Pressable>
+      </View>
+
       <View style={[styles.hero, { backgroundColor: colors.primary }]}>
         <View style={{ flex: 1 }}>
-          <Text style={styles.heroLabel}>今日剩余预算</Text>
+          <Text style={styles.heroLabel}>{isToday ? '今日剩余预算' : '当日剩余预算'}</Text>
           <Text style={styles.heroNumber}>{remaining}<Text style={styles.heroUnit}> kcal</Text></Text>
           <Text style={styles.heroMeta}>已摄入 {Math.round(summary.calories)} · 运动消耗 {Math.round(summary.burned)}</Text>
         </View>
@@ -73,10 +99,20 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (tab: RootTab) => 
       </View>
 
       <View style={styles.macroGrid}>
-        <MacroCard label="蛋白质" value={summary.protein} goal={profile.proteinGoal} unit="g" color={colors.primary} />
-        <MacroCard label="碳水" value={summary.carb} goal={profile.carbGoal} unit="g" color={colors.blue} />
-        <MacroCard label="脂肪" value={summary.fat} goal={profile.fatGoal} unit="g" color={colors.orange} />
+        <MacroCard label="蛋白质" value={summary.protein} goal={profile.proteinGoal} unit="g" color={colors.primary} energyShare={macroShares.protein} />
+        <MacroCard label="碳水" value={summary.carb} goal={profile.carbGoal} unit="g" color={colors.blue} energyShare={macroShares.carb} />
+        <MacroCard label="脂肪" value={summary.fat} goal={profile.fatGoal} unit="g" color={colors.orange} energyShare={macroShares.fat} />
       </View>
+
+      {isToday && summary.calories > 0 && summary.carb < profile.carbGoal * 0.65 ? (
+        <View style={[styles.carbHint, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <View style={[styles.carbHintIcon, { backgroundColor: colors.primarySoft }]}><Text style={{ fontSize: 20 }}>🍠</Text></View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.carbHintTitle, { color: colors.text }]}>碳水进度偏低，别只顾补蛋白质</Text>
+            <Text style={[styles.carbHintText, { color: colors.textMuted }]}>碳水是身体的重要能量来源，适量摄入有助于训练和日常状态，也能减少身体把蛋白质用于供能。可优先补充蒸红薯 1 个（约150g、脂肪极低），其次煮玉米 1 根（约180g）；仍需计入全天热量和碳水目标。</Text>
+          </View>
+        </View>
+      ) : null}
 
       {profile.fattyLiverLevel !== 'none' ? (
         <View style={[styles.goalComparison, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -88,14 +124,14 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (tab: RootTab) => 
         </View>
       ) : null}
 
-      <Card style={{ gap: 14, backgroundColor: colors.primarySoft }}>
+      {isToday ? <Card style={{ gap: 14, backgroundColor: colors.primarySoft }}>
         <View style={styles.recommendTitle}>
           <View style={[styles.recommendIcon, { backgroundColor: colors.surface }]}>
             <Ionicons name="sparkles" size={18} color={colors.primary} />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={[styles.recommendEyebrow, { color: colors.primaryDark }]}>下一餐建议</Text>
-            <Text style={[styles.recommendBudget, { color: colors.text }]}>≤ {recommendation.calories} kcal · 蛋白质约 {recommendation.protein}g</Text>
+            <Text style={[styles.recommendBudget, { color: colors.text }]}>≤ {recommendation.calories} kcal · 蛋白质约 {recommendation.protein}g · 碳水约 {recommendation.carb}g</Text>
           </View>
         </View>
         <Text style={[styles.recommendText, { color: colors.text }]}>{recommendation.message}</Text>
@@ -129,7 +165,12 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (tab: RootTab) => 
         ) : (
           <Text style={[styles.miniEmpty, { color: colors.textMuted }]}>本餐剩余建议不足 80 kcal，先查看今天已记录的食物，避免重复添加。</Text>
         )}
-      </Card>
+      </Card> : (
+        <Card style={{ gap: 8, backgroundColor: colors.primarySoft }}>
+          <Text style={[styles.recommendEyebrow, { color: colors.primaryDark }]}>历史日期复盘</Text>
+          <Text style={[styles.recommendText, { color: colors.text }]}>当前正在查看 {selectedDate}，热量、营养素供能占比和下方摄入清单均已联动。返回今天后可继续使用下一餐建议和一键套餐。</Text>
+        </Card>
+      )}
 
       <SectionTitle title="方便常备的减脂友好食物" action={<Text style={{ color: colors.textMuted, fontSize: 10 }}>左右滑动</Text>} />
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.foodTipsList}>
@@ -146,7 +187,7 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (tab: RootTab) => 
       </ScrollView>
       <Text style={[styles.foodTipsDisclaimer, { color: colors.textMuted }]}>这些食物便于控制份量和坚持记录；减脂效果仍取决于全天总热量与长期执行。</Text>
 
-      <SectionTitle title="今日记录" />
+      <SectionTitle title={`${todayLabel}摄入与运动明细`} />
       <Card style={{ padding: 0, overflow: 'hidden' }}>
         {meals.length === 0 && exercises.length === 0 ? (
           <View style={styles.noRecords}>
@@ -159,15 +200,30 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (tab: RootTab) => 
             {(Object.keys(MEAL_LABELS) as Array<keyof typeof MEAL_LABELS>).map(type => {
               const items = meals.filter(item => item.mealType === type);
               if (!items.length) return null;
-              const calories = items.reduce((sum, item) => sum + item.calories, 0);
+              const mealSummary = items.reduce((sum, item) => ({
+                calories: sum.calories + item.calories,
+                protein: sum.protein + item.protein,
+                fat: sum.fat + item.fat,
+                carb: sum.carb + item.carb,
+              }), { calories: 0, protein: 0, fat: 0, carb: 0 });
               return (
-                <View key={type} style={[styles.recordRow, { borderBottomColor: colors.border }]}>
-                  <View style={[styles.recordIcon, { backgroundColor: colors.surfaceMuted }]}><Text>{type === 'breakfast' ? '☀️' : type === 'lunch' ? '🍚' : type === 'dinner' ? '🌙' : '🍎'}</Text></View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.recordName, { color: colors.text }]}>{MEAL_LABELS[type]}</Text>
-                    <Text numberOfLines={1} style={[styles.recordFoods, { color: colors.textMuted }]}>{items.map(item => item.foodName).join('、')}</Text>
+                <View key={type} style={[styles.mealSection, { borderBottomColor: colors.border }]}>
+                  <View style={styles.mealHeader}>
+                    <View style={[styles.recordIcon, { backgroundColor: colors.surfaceMuted }]}><Text>{type === 'breakfast' ? '☀️' : type === 'lunch' ? '🍚' : type === 'dinner' ? '🌙' : '🍎'}</Text></View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.recordName, { color: colors.text }]}>{MEAL_LABELS[type]}</Text>
+                      <Text style={[styles.recordFoods, { color: colors.textMuted }]}>蛋白质 {mealSummary.protein.toFixed(1)}g · 脂肪 {mealSummary.fat.toFixed(1)}g · 碳水 {mealSummary.carb.toFixed(1)}g</Text>
+                    </View>
+                    <Text style={[styles.recordCalories, { color: colors.text }]}>{Math.round(mealSummary.calories)} kcal</Text>
                   </View>
-                  <Text style={[styles.recordCalories, { color: colors.text }]}>{Math.round(calories)} kcal</Text>
+                  <View style={[styles.mealItems, { backgroundColor: colors.surfaceMuted }]}>
+                    {items.map(item => (
+                      <View key={item.id} style={styles.mealItemRow}>
+                        <Text style={[styles.mealItemName, { color: colors.text }]}>{item.foodName}</Text>
+                        <Text style={[styles.mealItemNutrition, { color: colors.textMuted }]}>{Math.round(item.calories)} kcal · 蛋 {item.protein.toFixed(1)}g · 脂 {item.fat.toFixed(1)}g · 碳 {item.carb.toFixed(1)}g</Text>
+                      </View>
+                    ))}
+                  </View>
                 </View>
               );
             })}
@@ -189,20 +245,23 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (tab: RootTab) => 
   );
 }
 
-function MacroCard({ label, value, goal, unit, color }: { label: string; value: number; goal: number; unit: string; color: string }) {
+function MacroCard({ label, value, goal, unit, color, energyShare }: { label: string; value: number; goal: number; unit: string; color: string; energyShare: number }) {
   const colors = useColors();
   return (
     <View style={[styles.macroCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
       <Text style={[styles.macroLabel, { color: colors.textMuted }]}>{label}</Text>
       <Text style={[styles.macroValue, { color: colors.text }]}>{Math.round(value)}<Text style={styles.macroUnit}>{unit}</Text></Text>
       <ProgressBar value={value / goal} color={color} />
-      <Text style={[styles.macroGoal, { color: colors.textMuted }]}>目标 {goal}{unit}</Text>
+      <Text style={[styles.macroGoal, { color: colors.textMuted }]}>目标 {goal}{unit} · 供能 {energyShare}%</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   avatar: { width: 48, height: 48, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
+  dateNav: { minHeight: 58, borderWidth: 1, borderRadius: 18, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  dateText: { fontSize: 14, fontWeight: '900' },
+  dateHint: { fontSize: 9.5, marginTop: 3 },
   hero: { padding: 22, borderRadius: 25, flexDirection: 'row', alignItems: 'center' },
   heroLabel: { color: '#D9F1E4', fontSize: 12, fontWeight: '700' },
   heroNumber: { color: '#fff', fontSize: 42, lineHeight: 50, fontWeight: '900', letterSpacing: -1 },
@@ -217,6 +276,10 @@ const styles = StyleSheet.create({
   macroValue: { fontSize: 21, fontWeight: '900' },
   macroUnit: { fontSize: 10, fontWeight: '600' },
   macroGoal: { fontSize: 9 },
+  carbHint: { borderWidth: 1, borderRadius: 18, padding: 13, flexDirection: 'row', alignItems: 'flex-start', gap: 11 },
+  carbHintIcon: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  carbHintTitle: { fontSize: 12, fontWeight: '900' },
+  carbHintText: { fontSize: 10.5, lineHeight: 16, marginTop: 4 },
   goalComparison: { borderWidth: 1, borderRadius: 16, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10 },
   goalComparisonIcon: { width: 35, height: 35, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   goalComparisonTitle: { fontSize: 11.5, fontWeight: '800' },
@@ -258,4 +321,10 @@ const styles = StyleSheet.create({
   recordName: { fontSize: 14, fontWeight: '800' },
   recordFoods: { fontSize: 11, marginTop: 3 },
   recordCalories: { fontSize: 12, fontWeight: '800' },
+  mealSection: { padding: 14, borderBottomWidth: StyleSheet.hairlineWidth, gap: 10 },
+  mealHeader: { flexDirection: 'row', alignItems: 'center', gap: 11 },
+  mealItems: { borderRadius: 13, paddingHorizontal: 11, paddingVertical: 5 },
+  mealItemRow: { paddingVertical: 7, gap: 3 },
+  mealItemName: { fontSize: 11.5, fontWeight: '800' },
+  mealItemNutrition: { fontSize: 9.5, lineHeight: 14 },
 });

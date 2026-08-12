@@ -36,7 +36,7 @@ export const COMMON_FOODS: FoodItem[] = [
   { id: 'oats', name: '燕麦片', calories: 338, protein: 10.1, fat: 6.1, carb: 61.6, isCommon: true, servings: [{ label: '勺', grams: 10 }, { label: '小碗', grams: 40 }] },
   { id: 'whole-wheat-bread', name: '全麦面包', calories: 246, protein: 9.9, fat: 4.2, carb: 44.5, isCommon: true, servings: [{ label: '片', grams: 30 }] },
   { id: 'sweet-potato', name: '蒸红薯', calories: 86, protein: 1.6, fat: 0.1, carb: 20.1, isCommon: true, servings: [{ label: '个', grams: 150 }, { label: '小块', grams: 50 }] },
-  { id: 'corn', name: '煮玉米', calories: 112, protein: 4, fat: 1.2, carb: 22.8, isCommon: true, servings: [{ label: '根', grams: 150 }, { label: '段', grams: 75 }] },
+  { id: 'corn', name: '煮玉米', calories: 112, protein: 4, fat: 1.2, carb: 22.8, isCommon: true, servings: [{ label: '根', grams: 180 }, { label: '段', grams: 90 }] },
   { id: 'egg', name: '水煮鸡蛋', calories: 144, protein: 13.3, fat: 8.8, carb: 2.8, isCommon: true, servings: [{ label: '个', grams: 50 }] },
   { id: 'egg-white', name: '水煮蛋白', calories: 52, protein: 10.9, fat: 0.2, carb: 0.7, isCommon: true, servings: [{ label: '个', grams: 33 }] },
   { id: 'chicken-breast', name: '鸡胸肉', calories: 133, protein: 24.6, fat: 2.5, carb: 0.6, isCommon: true, servings: [{ label: '掌心份', grams: 100 }, { label: '片', grams: 25 }] },

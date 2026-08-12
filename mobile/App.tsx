@@ -13,7 +13,6 @@ import { SettingsScreen } from './src/screens/SettingsScreen';
 import { TrendsScreen } from './src/screens/TrendsScreen';
 import { RootTab } from './src/types';
 import { useColors } from './src/theme';
-import { dateKey } from './src/lib/calculations';
 
 export default function App() {
   return (
@@ -44,7 +43,6 @@ function ProfileGate() {
 
 function MainApp() {
   const [tab, setTab] = useState<RootTab>('home');
-  const { setSelectedDate } = useApp();
   const colors = useColors();
   const insets = useSafeAreaInsets();
   return (
@@ -56,7 +54,7 @@ function MainApp() {
         {tab === 'settings' ? <SettingsScreen /> : null}
       </View>
       <View style={[styles.tabBar, { paddingBottom: Math.max(insets.bottom, 10), backgroundColor: colors.surface, borderColor: colors.border }]}>
-        <TabButton tab="home" active={tab === 'home'} label="首页" icon="home-outline" activeIcon="home" onPress={next => { setSelectedDate(dateKey()); setTab(next); }} />
+        <TabButton tab="home" active={tab === 'home'} label="首页" icon="home-outline" activeIcon="home" onPress={setTab} />
         <TabButton tab="record" active={tab === 'record'} label="记录" icon="add-circle-outline" activeIcon="add-circle" onPress={setTab} emphasized />
         <TabButton tab="trends" active={tab === 'trends'} label="趋势" icon="stats-chart-outline" activeIcon="stats-chart" onPress={setTab} />
         <TabButton tab="settings" active={tab === 'settings'} label="我的" icon="person-outline" activeIcon="person" onPress={setTab} />

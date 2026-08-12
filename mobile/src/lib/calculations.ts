@@ -94,12 +94,16 @@ export function getMealRecommendation(profile: UserProfile, summary: DailySummar
   const calories = Math.max(0, Math.round((profile.calorieGoal - summary.calories) / remainingMeals));
   const fat = Math.max(0, Math.round((profile.fatGoal - summary.fat) / remainingMeals));
   const protein = Math.max(0, Math.round((profile.proteinGoal - summary.protein) / remainingMeals));
+  const carb = Math.max(0, Math.round((profile.carbGoal - summary.carb) / remainingMeals));
   const overFat = summary.fat > profile.fatGoal * 0.75;
   const lowProtein = summary.protein < profile.proteinGoal * 0.45;
+  const expectedProgress = Math.max(1 / plannedMealCount, completedMealCount / plannedMealCount);
+  const lowCarb = completedMealCount > 0 && summary.carb < profile.carbGoal * expectedProgress * 0.65;
   let message = '优先选择一拳主食、一掌蛋白质和两拳蔬菜。';
   if (overFat) message = '今天油脂偏高，下一餐建议清蒸鱼、豆腐或水煮菜，少用炒制酱汁。';
+  else if (lowCarb) message = '碳水进度偏慢，下一餐别只补蛋白质：优先加约150g蒸红薯，其次约180g煮玉米，并计入全天预算。';
   else if (lowProtein) message = '蛋白质进度偏慢，下一餐可选择鸡胸肉、鱼虾或豆制品。';
-  return { calories, fat, protein, message };
+  return { calories, fat, protein, carb, message };
 }
 
 export function dateKey(date = new Date()) {

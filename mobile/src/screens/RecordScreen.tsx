@@ -233,7 +233,8 @@ function MealHistory({ mealType }: { mealType: MealType }) {
           <View key={item.id} style={[styles.historyRow, { borderBottomColor: colors.border }]}>
             <View style={{ flex: 1 }}>
               <Text style={[styles.foodName, { color: colors.text }]}>{item.foodName} · {item.portionLabel || `${item.weightG}g`}</Text>
-              <Text style={[styles.foodNutrition, { color: colors.textMuted }]}>{Math.round(item.calories)} kcal · 蛋白质 {item.protein.toFixed(1)}g</Text>
+              <Text style={[styles.foodNutrition, { color: colors.textMuted }]}>热量 {Math.round(item.calories)} kcal · 蛋白质 {item.protein.toFixed(1)}g</Text>
+              <Text style={[styles.foodNutrition, { color: colors.textMuted }]}>脂肪 {item.fat.toFixed(1)}g · 碳水 {item.carb.toFixed(1)}g</Text>
             </View>
             <Pressable onPress={() => Alert.alert('删除这条记录？', `${item.foodName} ${item.portionLabel || `${item.weightG}g`}`, [
               { text: '取消', style: 'cancel' },
