@@ -13,6 +13,7 @@ import { SettingsScreen } from './src/screens/SettingsScreen';
 import { TrendsScreen } from './src/screens/TrendsScreen';
 import { RootTab } from './src/types';
 import { useColors } from './src/theme';
+import { PrimaryButton } from './src/components/ui';
 
 export default function App() {
   return (
@@ -35,8 +36,17 @@ function AppGate() {
 
 function ProfileGate() {
   const colors = useColors();
-  const { loading, profile } = useApp();
+  const { loading, loadError, profile, retryLoad } = useApp();
   if (loading) return <View style={[styles.loading, { backgroundColor: colors.background }]}><ActivityIndicator size="large" color={colors.primary} /></View>;
+  if (loadError) return (
+    <View style={[styles.loadError, { backgroundColor: colors.background }]}>
+      <Text style={styles.loadErrorIcon}>🌿</Text>
+      <Text style={[styles.loadErrorTitle, { color: colors.text }]}>暂时没能读取本地档案</Text>
+      <Text style={[styles.loadErrorText, { color: colors.textMuted }]}>你的数据没有被清除，可能只是数据库或网络暂时不可用。请重试，不会让你重新填写档案。</Text>
+      <Text style={[styles.loadErrorDetail, { color: colors.textMuted }]}>{loadError}</Text>
+      <View style={{ width: '100%' }}><PrimaryButton label="重新读取" onPress={() => void retryLoad()} /></View>
+    </View>
+  );
   if (!profile) return <OnboardingScreen />;
   return <MainApp />;
 }
@@ -81,6 +91,11 @@ function TabButton({ tab, active, label, icon, activeIcon, onPress, emphasized }
 const styles = StyleSheet.create({
   root: { flex: 1 },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  loadError: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 28 },
+  loadErrorIcon: { fontSize: 42 },
+  loadErrorTitle: { fontSize: 20, fontWeight: '900', marginTop: 14 },
+  loadErrorText: { fontSize: 13, lineHeight: 20, textAlign: 'center', marginTop: 9, marginBottom: 8 },
+  loadErrorDetail: { fontSize: 10, lineHeight: 15, textAlign: 'center', marginBottom: 20 },
   tabBar: { position: 'absolute', left: 12, right: 12, bottom: 8, minHeight: 67, borderWidth: 1, borderRadius: 23, flexDirection: 'row', paddingTop: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.09, shadowRadius: 12, elevation: 8 },
   tabButton: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3 },
   emphasized: { width: 43, height: 43, borderRadius: 15, alignItems: 'center', justifyContent: 'center', marginTop: -20, shadowColor: '#1A5A3D', shadowOpacity: 0.25, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 5 },

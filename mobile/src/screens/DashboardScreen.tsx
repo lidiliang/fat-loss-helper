@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Card, Field, Header, PrimaryButton, ProgressBar, Screen, SectionTitle } from '../components/ui';
+import { MarkdownText } from '../components/MarkdownText';
 import { CONVENIENT_FAT_LOSS_FOODS, FATTY_LIVER_LEVELS, MEAL_LABELS } from '../data/seed';
 import { calculateGoals, dateKey, getMealRecommendation, getSaturatedFatLimit } from '../lib/calculations';
 import { buildMiniMealRecommendations, MiniMealRecommendation } from '../lib/mealRecommendations';
@@ -324,7 +325,7 @@ function AIAssistantCard() {
       {summaryRecord ? (
         <View style={[styles.aiAnswer, { backgroundColor: colors.surfaceMuted }]}>
           <Text style={[styles.aiStatus, { color: isLatest ? colors.primaryDark : colors.orange }]}>{isLatest ? '已按当前记录生成' : '饮食或运动已变化，可重新生成'}</Text>
-          <Text style={[styles.aiAnswerText, { color: colors.text }]}>{summaryRecord.responseText}</Text>
+          <MarkdownText value={summaryRecord.responseText} />
         </View>
       ) : <Text style={[styles.aiHint, { color: colors.textMuted }]}>记录饮食和运动后，可让 AI 从热量与三大营养素角度做一次温和复盘。</Text>}
       <PrimaryButton label={summaryRecord ? '重新生成今日总结' : '生成今日总结'} onPress={generate} loading={summaryLoading} secondary={Boolean(summaryRecord)} />
@@ -339,7 +340,7 @@ function AIAssistantCard() {
       </View>
       <Field label="你的问题" value={question} onChangeText={setQuestion} placeholder="例如：今晚还能喝一杯脱脂牛奶吗？" multiline />
       <PrimaryButton label="发送给 DeepSeek" onPress={ask} loading={asking} disabled={!question.trim()} />
-      {answer ? <View style={[styles.aiAnswer, { backgroundColor: colors.primarySoft }]}><Text style={[styles.aiAnswerText, { color: colors.text }]}>{answer}</Text></View> : null}
+      {answer ? <View style={[styles.aiAnswer, { backgroundColor: colors.primarySoft }]}><MarkdownText value={answer} /></View> : null}
       <Text style={[styles.aiDisclaimer, { color: colors.textMuted }]}>AI 建议仅供饮食记录与生活方式参考，不替代医生诊断；重度脂肪肝、血糖异常或明显不适请及时就医。</Text>
     </Card>
   );
@@ -420,7 +421,6 @@ const styles = StyleSheet.create({
   aiHint: { fontSize: 11, lineHeight: 17 },
   aiStatus: { fontSize: 10, fontWeight: '900', marginBottom: 7 },
   aiAnswer: { borderRadius: 14, padding: 13 },
-  aiAnswerText: { fontSize: 11.5, lineHeight: 19 },
   aiQuestionTitle: { fontSize: 13, fontWeight: '900' },
   aiExamples: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
   aiExample: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 7 },

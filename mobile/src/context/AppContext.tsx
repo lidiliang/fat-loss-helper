@@ -27,6 +27,8 @@ import {
   saveWeight,
 } from '../lib/database';
 import { rescheduleRemindersIfAuthorized, scheduleReminders } from '../lib/notifications';
+import { downloadLatestBackup } from '../lib/api';
+import { cacheProfile, loadCachedProfile } from '../lib/profileCache';
 import { backupNow, registerPeriodicBackup } from '../lib/sync';
 import {
   DailySummary,
@@ -46,6 +48,7 @@ import { useAuth } from './AuthContext';
 
 interface AppValue {
   loading: boolean;
+  loadError: string | null;
   profile: UserProfile | null;
   foods: FoodItem[];
   meals: MealRecord[];
@@ -59,6 +62,7 @@ interface AppValue {
   summary: DailySummary;
   setSelectedDate: (date: string) => void;
   refresh: () => Promise<void>;
+  retryLoad: () => Promise<void>;
   saveProfile: (profile: UserProfile) => Promise<void>;
   addMeal: (food: FoodItem, weightG: number, mealType: MealType, portionLabel?: string | null) => Promise<void>;
   addTemplate: (template: MealTemplate, mealType: MealType) => Promise<void>;
@@ -78,8 +82,9 @@ const AppContext = createContext<AppValue | null>(null);
 const EMPTY_SUMMARY: DailySummary = { calories: 0, protein: 0, fat: 0, carb: 0, burned: 0, netCalories: 0 };
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [foods, setFoods] = useState<FoodItem[]>([]);
   const [meals, setMeals] = useState<MealRecord[]>([]);
@@ -94,8 +99,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(async () => {
     if (!user) return;
-    const [nextProfile, nextFoods, nextMeals, nextExercises, nextWeights, customTemplates, hiddenTemplateIds, nextReminders, nextDailyIntakes, nextFoodPreferences] = await Promise.all([
-      getProfile(user.id),
+    let nextProfile = await getProfile(user.id);
+    if (!nextProfile) {
+      const cachedProfile = await loadCachedProfile(user.id);
+      if (cachedProfile) {
+        await saveProfileDb(cachedProfile);
+        nextProfile = cachedProfile;
+      }
+    }
+    if (!nextProfile && token) {
+      const backup = await downloadLatestBackup(token);
+      if (backup.snapshot?.profile) {
+        await saveProfileDb({ ...backup.snapshot.profile, ownerId: user.id });
+        nextProfile = await getProfile(user.id);
+      }
+    }
+    if (nextProfile) await cacheProfile(nextProfile);
+    setProfile(nextProfile);
+    const [nextFoods, nextMeals, nextExercises, nextWeights, customTemplates, hiddenTemplateIds, nextReminders, nextDailyIntakes, nextFoodPreferences] = await Promise.all([
       getFoods(user.id),
       getMeals(user.id, selectedDate),
       getExercises(user.id, selectedDate),
@@ -106,7 +127,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       getDailyIntakes(user.id, 3650),
       getFoodPreferences(user.id),
     ]);
-    setProfile(nextProfile);
     setFoods(nextFoods);
     setMeals(nextMeals);
     setExercises(nextExercises);
@@ -123,13 +143,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // This never prompts on startup when notification permission is absent.
       void rescheduleRemindersIfAuthorized(nextReminders).catch(() => undefined);
     }
-    setLoading(false);
-  }, [user, selectedDate]);
+  }, [user, token, selectedDate]);
+
+  const retryLoad = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      await refresh();
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : '本地数据读取失败');
+    } finally {
+      setLoading(false);
+    }
+  }, [refresh]);
 
   useEffect(() => {
-    setLoading(true);
-    refresh().catch(() => setLoading(false));
-  }, [refresh]);
+    void retryLoad();
+  }, [retryLoad]);
 
   useEffect(() => {
     registerPeriodicBackup().catch(() => undefined);
@@ -146,6 +176,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AppValue>(() => ({
     loading,
+    loadError,
     profile,
     foods,
     meals,
@@ -159,8 +190,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     summary: profile ? summarizeDay(meals, exercises) : EMPTY_SUMMARY,
     setSelectedDate,
     refresh,
+    retryLoad,
     saveProfile: async nextProfile => {
       await saveProfileDb(nextProfile);
+      await cacheProfile(nextProfile);
       setProfile(nextProfile);
     },
     addMeal: async (food, weightG, mealType, portionLabel) => {
@@ -262,7 +295,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       await scheduleReminders(settings);
       setRemindersState(settings);
     },
-  }), [loading, profile, foods, meals, exercises, weights, templates, reminders, dailyIntakes, foodPreferences, selectedDate, refresh, user]);
+  }), [loading, loadError, profile, foods, meals, exercises, weights, templates, reminders, dailyIntakes, foodPreferences, selectedDate, refresh, retryLoad, user]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }

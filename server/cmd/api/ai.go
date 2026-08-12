@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -34,8 +35,10 @@ type aiUsage struct {
 type aiChatResponse struct {
 	Choices []struct {
 		Message struct {
-			Content string `json:"content"`
+			Content          string `json:"content"`
+			ReasoningContent string `json:"reasoning_content"`
 		} `json:"message"`
+		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
 	Usage aiUsage `json:"usage"`
 	Error *struct {
@@ -46,6 +49,27 @@ type aiChatResponse struct {
 type aiHTTPError struct {
 	StatusCode int
 	Message    string
+}
+
+type aiEmptyContentError struct {
+	FinishReason   string
+	ReasoningChars int
+}
+
+func (e *aiEmptyContentError) Error() string {
+	finishReason := e.FinishReason
+	if finishReason == "" {
+		finishReason = "unknown"
+	}
+	return fmt.Sprintf("DeepSeek 未返回最终内容（finish_reason=%s, reasoning_chars=%d）", finishReason, e.ReasoningChars)
+}
+
+type aiMalformedResponseError struct {
+	Message string
+}
+
+func (e *aiMalformedResponseError) Error() string {
+	return e.Message
 }
 
 func (e *aiHTTPError) Error() string {
@@ -106,7 +130,7 @@ func newAIClient(baseURL, apiKey, model string) *aiClient {
 		baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"),
 		apiKey:  strings.TrimSpace(apiKey),
 		model:   strings.TrimSpace(model),
-		http:    &http.Client{Timeout: 45 * time.Second},
+		http:    &http.Client{Timeout: 25 * time.Second},
 	}
 }
 
@@ -115,6 +139,23 @@ func (a *aiClient) available() bool {
 }
 
 func (a *aiClient) chat(ctx context.Context, system, user string, jsonMode bool) (string, aiUsage, error) {
+	var total aiUsage
+	var lastErr error
+	for attempt := 0; attempt < 2; attempt++ {
+		content, usage, err := a.chatOnce(ctx, system, user, jsonMode)
+		total = addAIUsage(total, usage)
+		if err == nil {
+			return content, total, nil
+		}
+		lastErr = err
+		if !isRetryableAIError(err) || attempt == 1 || !waitForAIRetry(ctx) {
+			break
+		}
+	}
+	return "", total, lastErr
+}
+
+func (a *aiClient) chatOnce(ctx context.Context, system, user string, jsonMode bool) (string, aiUsage, error) {
 	if !a.available() {
 		return "", aiUsage{}, errors.New("AI_API_KEY 未配置")
 	}
@@ -125,7 +166,8 @@ func (a *aiClient) chat(ctx context.Context, system, user string, jsonMode bool)
 			{"role": "user", "content": user},
 		},
 		"temperature": 0.3,
-		"max_tokens":  1200,
+		"max_tokens":  1600,
+		"thinking":    map[string]string{"type": "disabled"},
 	}
 	if jsonMode {
 		body["response_format"] = map[string]string{"type": "json_object"}
@@ -151,7 +193,11 @@ func (a *aiClient) chat(ctx context.Context, system, user string, jsonMode bool)
 	}
 	var payload aiChatResponse
 	if err := json.Unmarshal(raw, &payload); err != nil {
-		return "", aiUsage{}, fmt.Errorf("DeepSeek 返回格式异常（HTTP %d）", resp.StatusCode)
+		message := fmt.Sprintf("DeepSeek 返回格式异常（HTTP %d, response=%s）", resp.StatusCode, compactAIExcerpt(string(raw), 240))
+		if resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests {
+			return "", aiUsage{}, &aiHTTPError{StatusCode: resp.StatusCode, Message: message}
+		}
+		return "", aiUsage{}, &aiMalformedResponseError{Message: message}
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		message := "DeepSeek 请求失败"
@@ -160,10 +206,92 @@ func (a *aiClient) chat(ctx context.Context, system, user string, jsonMode bool)
 		}
 		return "", payload.Usage, &aiHTTPError{StatusCode: resp.StatusCode, Message: message}
 	}
-	if len(payload.Choices) == 0 || strings.TrimSpace(payload.Choices[0].Message.Content) == "" {
-		return "", payload.Usage, errors.New("DeepSeek 未返回内容")
+	if len(payload.Choices) == 0 {
+		return "", payload.Usage, &aiEmptyContentError{FinishReason: "no_choices"}
 	}
-	return strings.TrimSpace(payload.Choices[0].Message.Content), payload.Usage, nil
+	choice := payload.Choices[0]
+	if strings.TrimSpace(choice.Message.Content) == "" {
+		return "", payload.Usage, &aiEmptyContentError{
+			FinishReason:   choice.FinishReason,
+			ReasoningChars: len([]rune(choice.Message.ReasoningContent)),
+		}
+	}
+	return strings.TrimSpace(choice.Message.Content), payload.Usage, nil
+}
+
+func (a *aiClient) estimateFoodNutrition(ctx context.Context, prompt string) (foodEstimate, aiUsage, error) {
+	var total aiUsage
+	var lastErr error
+	currentPrompt := prompt
+	for attempt := 0; attempt < 2; attempt++ {
+		content, usage, err := a.chatOnce(ctx, nutritionSafetyBoundary+"你必须输出合法JSON，不要使用Markdown代码块。", currentPrompt, true)
+		total = addAIUsage(total, usage)
+		if err != nil {
+			lastErr = err
+			if !isRetryableAIError(err) || attempt == 1 || !waitForAIRetry(ctx) {
+				break
+			}
+			continue
+		}
+		var estimate foodEstimate
+		decodeErr := json.Unmarshal([]byte(stripJSONFence(content)), &estimate)
+		if decodeErr == nil && validFoodEstimate(estimate) {
+			return estimate, total, nil
+		}
+		lastErr = fmt.Errorf("模型返回的营养结构无法解析（attempt=%d, response=%s）", attempt+1, compactAIExcerpt(content, 240))
+		if attempt == 0 {
+			currentPrompt = prompt + `\n上一次输出不是符合字段和数值约束的JSON。请重新检查全部字段，只输出一个完整JSON对象，不要解释。`
+		}
+	}
+	return foodEstimate{}, total, lastErr
+}
+
+func addAIUsage(left, right aiUsage) aiUsage {
+	return aiUsage{
+		PromptTokens:     left.PromptTokens + right.PromptTokens,
+		CompletionTokens: left.CompletionTokens + right.CompletionTokens,
+		TotalTokens:      left.TotalTokens + right.TotalTokens,
+	}
+}
+
+func isRetryableAIError(err error) bool {
+	var emptyErr *aiEmptyContentError
+	if errors.As(err, &emptyErr) {
+		return true
+	}
+	var malformedErr *aiMalformedResponseError
+	if errors.As(err, &malformedErr) {
+		return true
+	}
+	var httpErr *aiHTTPError
+	if errors.As(err, &httpErr) {
+		return httpErr.StatusCode == http.StatusRequestTimeout || httpErr.StatusCode == http.StatusTooManyRequests || httpErr.StatusCode >= 500
+	}
+	var networkErr net.Error
+	return errors.As(err, &networkErr)
+}
+
+func waitForAIRetry(ctx context.Context) bool {
+	timer := time.NewTimer(250 * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
+}
+
+func compactAIExcerpt(value string, maxRunes int) string {
+	value = strings.Join(strings.Fields(value), " ")
+	runes := []rune(value)
+	if len(runes) > maxRunes {
+		value = string(runes[:maxRunes]) + "…"
+	}
+	if value == "" {
+		return "<empty>"
+	}
+	return value
 }
 
 func (s *server) latestDailySummary(c *gin.Context) {
@@ -207,7 +335,7 @@ func (s *server) generateDailySummary(c *gin.Context) {
 	prompt := `请根据以下当日档案、目标、饮食与运动数据生成今日减脂总结。使用以下小标题：今日概况、做得好的地方、需要调整、明日一条行动建议。必须同时评价总热量、蛋白质、脂肪、碳水，不要鼓励为了“达标”而强行吃满目标；若数据不完整请明确说明。控制在500字以内。数据：` + string(contextJSON)
 	content, usage, callErr := s.ai.chat(c.Request.Context(), nutritionSafetyBoundary, prompt, false)
 	if callErr != nil {
-		s.failAIInteraction(c.Request.Context(), recordID, callErr)
+		s.failAIInteraction(c.Request.Context(), recordID, callErr, usage)
 		fail(c, http.StatusBadGateway, friendlyAIError(callErr))
 		return
 	}
@@ -238,17 +366,10 @@ func (s *server) estimateFood(c *gin.Context) {
 		return
 	}
 	prompt := fmt.Sprintf(`估算食物“%s”的营养。补充描述：“%s”。只返回JSON对象，字段必须为：name、nutritionUnit（只能g或ml）、calories（单位kcal）、protein、fat、carb（后三者单位g，所有营养均按每100g或100mL）、servingLabel、servingAmount、confidence（high/medium/low）、basis、notice。数值使用非负数字；品牌或做法不明确时使用常见中位估计并降低置信度。`, input.Name, input.Description)
-	content, usage, callErr := s.ai.chat(c.Request.Context(), nutritionSafetyBoundary+"你必须输出合法JSON，不要使用Markdown代码块。", prompt, true)
+	estimate, usage, callErr := s.ai.estimateFoodNutrition(c.Request.Context(), prompt)
 	if callErr != nil {
-		s.failAIInteraction(c.Request.Context(), recordID, callErr)
+		s.failAIInteraction(c.Request.Context(), recordID, callErr, usage)
 		fail(c, http.StatusBadGateway, friendlyAIError(callErr))
-		return
-	}
-	var estimate foodEstimate
-	if err := json.Unmarshal([]byte(stripJSONFence(content)), &estimate); err != nil || !validFoodEstimate(estimate) {
-		err = errors.New("模型返回的营养结构无法解析")
-		s.failAIInteraction(c.Request.Context(), recordID, err)
-		fail(c, http.StatusBadGateway, err.Error())
 		return
 	}
 	responseJSON, _ := json.Marshal(estimate)
@@ -282,7 +403,7 @@ func (s *server) askNutritionAssistant(c *gin.Context) {
 当日数据：` + string(contextJSON)
 	content, usage, callErr := s.ai.chat(c.Request.Context(), nutritionSafetyBoundary, prompt, false)
 	if callErr != nil {
-		s.failAIInteraction(c.Request.Context(), recordID, callErr)
+		s.failAIInteraction(c.Request.Context(), recordID, callErr, usage)
 		fail(c, http.StatusBadGateway, friendlyAIError(callErr))
 		return
 	}
@@ -335,12 +456,12 @@ func (s *server) completeAIInteraction(ctx context.Context, id uuid.UUID, text s
 	return err
 }
 
-func (s *server) failAIInteraction(ctx context.Context, id uuid.UUID, cause error) {
+func (s *server) failAIInteraction(ctx context.Context, id uuid.UUID, cause error, usage aiUsage) {
 	message := cause.Error()
 	if len(message) > 1000 {
 		message = message[:1000]
 	}
-	_, _ = s.db.Exec(ctx, `UPDATE ai_interactions SET status='failed',error_message=$2,completed_at=NOW() WHERE id=$1`, id, message)
+	_, _ = s.db.Exec(ctx, `UPDATE ai_interactions SET status='failed',error_message=$2,prompt_tokens=$3,completion_tokens=$4,total_tokens=$5,completed_at=NOW() WHERE id=$1`, id, message, usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens)
 }
 
 func (s *server) loadLatestAIRecord(ctx context.Context, userID uuid.UUID, interactionType, day string) (aiRecord, error) {
