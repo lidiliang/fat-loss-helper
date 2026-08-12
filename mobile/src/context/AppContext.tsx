@@ -9,6 +9,7 @@ import {
   deleteTemplate as deleteTemplateDb,
   getExercises,
   getDailyIntakes,
+  getFoodPreferences,
   getFoods,
   getHiddenTemplateIds,
   getMeals,
@@ -32,6 +33,7 @@ import {
   DailyIntake,
   ExerciseRecord,
   FoodItem,
+  FoodPreference,
   FoodServing,
   MealRecord,
   MealTemplate,
@@ -52,6 +54,7 @@ interface AppValue {
   templates: MealTemplate[];
   reminders: ReminderSettings | null;
   dailyIntakes: DailyIntake[];
+  foodPreferences: FoodPreference[];
   selectedDate: string;
   summary: DailySummary;
   setSelectedDate: (date: string) => void;
@@ -85,12 +88,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [templates, setTemplates] = useState<MealTemplate[]>(BUILT_IN_TEMPLATES);
   const [reminders, setRemindersState] = useState<ReminderSettings | null>(null);
   const [dailyIntakes, setDailyIntakes] = useState<DailyIntake[]>([]);
+  const [foodPreferences, setFoodPreferences] = useState<FoodPreference[]>([]);
   const [selectedDate, setSelectedDate] = useState(dateKey());
   const repairedReminderKey = useRef('');
 
   const refresh = useCallback(async () => {
     if (!user) return;
-    const [nextProfile, nextFoods, nextMeals, nextExercises, nextWeights, customTemplates, hiddenTemplateIds, nextReminders, nextDailyIntakes] = await Promise.all([
+    const [nextProfile, nextFoods, nextMeals, nextExercises, nextWeights, customTemplates, hiddenTemplateIds, nextReminders, nextDailyIntakes, nextFoodPreferences] = await Promise.all([
       getProfile(user.id),
       getFoods(user.id),
       getMeals(user.id, selectedDate),
@@ -99,7 +103,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       getTemplates(user.id),
       getHiddenTemplateIds(user.id),
       getReminders(user.id),
-      getDailyIntakes(user.id),
+      getDailyIntakes(user.id, 3650),
+      getFoodPreferences(user.id),
     ]);
     setProfile(nextProfile);
     setFoods(nextFoods);
@@ -110,6 +115,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setTemplates([...customTemplates, ...BUILT_IN_TEMPLATES.filter(template => !hidden.has(template.id))]);
     setRemindersState(nextReminders);
     setDailyIntakes(nextDailyIntakes);
+    setFoodPreferences(nextFoodPreferences);
     const reminderKey = `${user.id}:${nextReminders.updatedAt}`;
     if (repairedReminderKey.current !== reminderKey) {
       repairedReminderKey.current = reminderKey;
@@ -148,6 +154,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     templates,
     reminders,
     dailyIntakes,
+    foodPreferences,
     selectedDate,
     summary: profile ? summarizeDay(meals, exercises) : EMPTY_SUMMARY,
     setSelectedDate,
@@ -255,7 +262,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       await scheduleReminders(settings);
       setRemindersState(settings);
     },
-  }), [loading, profile, foods, meals, exercises, weights, templates, reminders, dailyIntakes, selectedDate, refresh, user]);
+  }), [loading, profile, foods, meals, exercises, weights, templates, reminders, dailyIntakes, foodPreferences, selectedDate, refresh, user]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }

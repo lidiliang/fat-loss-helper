@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { AppText, Card, Chip, EmptyState, Field, Header, PrimaryButton, Screen, SectionTitle } from '../components/ui';
 import { EXERCISES, MEAL_LABELS } from '../data/seed';
-import { dateKey } from '../lib/calculations';
+import { dateKey, estimateStairClimbingMinutes } from '../lib/calculations';
 import { useApp } from '../context/AppContext';
 import { FoodItem, FoodMeasureUnit, FoodServing, MealTemplate, MealType } from '../types';
 import { useColors } from '../theme';
@@ -252,15 +252,31 @@ function ExerciseForm() {
   const [exercise, setExercise] = useState(EXERCISES[0]);
   const [duration, setDuration] = useState('30');
   const [distance, setDistance] = useState('');
+  const [floors, setFloors] = useState('7');
+  const [stairRepetitions, setStairRepetitions] = useState('1');
   const [saving, setSaving] = useState(false);
-  const estimated = Math.round(exercise.met * (app.profile?.weightKg ?? 70) * (Number(duration) / 60 || 0));
+  const isStairClimbing = Boolean(exercise.stairMode);
+  const stairMinutes = estimateStairClimbingMinutes(Number(floors), Number(stairRepetitions));
+  const exerciseMinutes = isStairClimbing ? stairMinutes : Number(duration) || 0;
+  const estimated = Math.round(exercise.met * (app.profile?.weightKg ?? 70) * (exerciseMinutes / 60));
   const submit = async () => {
-    if (Number(duration) <= 0) return Alert.alert('请填写时长', '运动时长需要大于 0 分钟。');
+    if (isStairClimbing && (Number(floors) <= 0 || !Number.isInteger(Number(floors)))) {
+      return Alert.alert('请填写楼层数', '每次爬楼层数需要填写大于 0 的整数。');
+    }
+    if (isStairClimbing && (Number(stairRepetitions) <= 0 || !Number.isInteger(Number(stairRepetitions)))) {
+      return Alert.alert('请填写次数', '爬楼次数需要填写大于 0 的整数。');
+    }
+    if (!isStairClimbing && Number(duration) <= 0) return Alert.alert('请填写时长', '运动时长需要大于 0 分钟。');
     setSaving(true);
     try {
-      await app.addExercise(exercise.name, exercise.met, Number(duration), Number(distance) || undefined);
+      const exerciseName = isStairClimbing
+        ? `爬楼梯（${Number(floors)}层×${Number(stairRepetitions)}次）`
+        : exercise.name;
+      await app.addExercise(exerciseName, exercise.met, exerciseMinutes, isStairClimbing ? undefined : Number(distance) || undefined);
       setDuration('30');
       setDistance('');
+      setFloors('7');
+      setStairRepetitions('1');
     } finally { setSaving(false); }
   };
   return (
@@ -270,10 +286,20 @@ function ExerciseForm() {
         <View style={styles.chipRow}>
           {EXERCISES.map(item => <Chip key={item.name} label={item.name} selected={exercise.name === item.name} onPress={() => setExercise(item)} small />)}
         </View>
-        <View style={styles.fieldRow}>
-          <Field label="运动时长" value={duration} onChangeText={setDuration} keyboardType="number-pad" suffix="分钟" />
-          <Field label="距离（可选）" value={distance} onChangeText={setDistance} keyboardType="decimal-pad" suffix="km" />
-        </View>
+        {isStairClimbing ? (
+          <>
+            <View style={styles.fieldRow}>
+              <Field label="每次爬楼层数" value={floors} onChangeText={setFloors} keyboardType="number-pad" suffix="层" />
+              <Field label="爬楼次数" value={stairRepetitions} onChangeText={setStairRepetitions} keyboardType="number-pad" suffix="次" />
+            </View>
+            <AppText muted style={{ fontSize: 10.5, lineHeight: 17 }}>共 {Math.max(0, Number(floors) || 0) * Math.max(0, Number(stairRepetitions) || 0)} 层，按上楼约 8.8 MET、每层约 0.35 分钟估算为 {stairMinutes} 分钟。实际消耗会随速度、台阶高度和是否负重变化。</AppText>
+          </>
+        ) : (
+          <View style={styles.fieldRow}>
+            <Field label="运动时长" value={duration} onChangeText={setDuration} keyboardType="number-pad" suffix="分钟" />
+            <Field label="距离（可选）" value={distance} onChangeText={setDistance} keyboardType="decimal-pad" suffix="km" />
+          </View>
+        )}
         <View style={[styles.estimate, { backgroundColor: colors.primarySoft }]}>
           <Text style={{ color: colors.primaryDark, fontSize: 12, fontWeight: '700' }}>预计消耗</Text>
           <Text style={{ color: colors.primaryDark, fontSize: 22, fontWeight: '900' }}>{estimated} kcal</Text>
@@ -285,7 +311,7 @@ function ExerciseForm() {
         {!app.exercises.length ? <EmptyState icon="🏃" title="今天还没有运动记录" detail="散步也算，把每一次行动都记下来。" /> : app.exercises.map(item => (
           <View key={item.id} style={[styles.historyRow, { borderBottomColor: colors.border }]}>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.foodName, { color: colors.text }]}>{item.exerciseType} · {item.durationMin} 分钟</Text>
+              <Text style={[styles.foodName, { color: colors.text }]}>{item.exerciseType} · 约 {item.durationMin} 分钟</Text>
               <Text style={[styles.foodNutrition, { color: colors.textMuted }]}>MET {item.met} · 消耗约 {Math.round(item.caloriesBurned)} kcal</Text>
             </View>
             <Pressable onPress={() => Alert.alert('删除运动记录？', item.exerciseType, [

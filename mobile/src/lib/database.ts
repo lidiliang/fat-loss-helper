@@ -5,6 +5,7 @@ import {
   DailyIntake,
   ExerciseRecord,
   FoodItem,
+  FoodPreference,
   FoodServing,
   FoodServingOverride,
   MealRecord,
@@ -318,6 +319,18 @@ export async function getDailyIntakes(ownerId: string, limit = 30): Promise<Dail
     `SELECT day_key AS date, SUM(calories) AS calories, SUM(protein) AS protein,
       SUM(fat) AS fat, SUM(carb) AS carb FROM meal_records
      WHERE owner_id = ? GROUP BY day_key ORDER BY day_key DESC LIMIT ?`,
+    ownerId,
+    limit,
+  );
+}
+
+export async function getFoodPreferences(ownerId: string, limit = 40): Promise<FoodPreference[]> {
+  const db = await databasePromise;
+  return db.getAllAsync<FoodPreference>(
+    `SELECT food_id AS foodId, MAX(food_name) AS foodName, meal_type AS mealType,
+      COUNT(*) AS count, AVG(weight_g) AS averageAmount
+     FROM meal_records WHERE owner_id = ?
+     GROUP BY food_id, meal_type ORDER BY count DESC, MAX(updated_at) DESC LIMIT ?`,
     ownerId,
     limit,
   );

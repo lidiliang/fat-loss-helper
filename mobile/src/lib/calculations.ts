@@ -67,6 +67,14 @@ export function calculateExerciseCalories(met: number, weightKg: number, duratio
   return Math.round(met * weightKg * (durationMin / 60));
 }
 
+/**
+ * Convert an easy-to-count stair-climbing record into an estimated duration.
+ * 0.35 min/floor represents a moderate ascent including short turns between floors.
+ */
+export function estimateStairClimbingMinutes(floorsPerClimb: number, repetitions: number) {
+  return round(Math.max(0, floorsPerClimb) * Math.max(0, repetitions) * 0.35, 1);
+}
+
 export function summarizeDay(meals: MealRecord[], exercises: ExerciseRecord[]): DailySummary {
   const eaten = meals.reduce(
     (sum, item) => ({

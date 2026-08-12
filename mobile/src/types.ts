@@ -137,6 +137,14 @@ export interface DailyIntake {
   carb: number;
 }
 
+export interface FoodPreference {
+  foodId: string;
+  foodName: string;
+  mealType: MealType;
+  count: number;
+  averageAmount: number;
+}
+
 export interface BackupSnapshot {
   version: 1;
   exportedAt: string;

@@ -1,15 +1,16 @@
 import { Ionicons } from '@expo/vector-icons';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Card, Header, PrimaryButton, ProgressBar, Screen, SectionTitle } from '../components/ui';
 import { CONVENIENT_FAT_LOSS_FOODS, FATTY_LIVER_LEVELS, MEAL_LABELS } from '../data/seed';
 import { calculateGoals, dateKey, getMealRecommendation, getSaturatedFatLimit } from '../lib/calculations';
+import { buildMiniMealRecommendations, MiniMealRecommendation } from '../lib/mealRecommendations';
 import { useApp } from '../context/AppContext';
 import { MealType, RootTab } from '../types';
 import { useColors } from '../theme';
 
 export function DashboardScreen({ onNavigate }: { onNavigate: (tab: RootTab) => void }) {
   const colors = useColors();
-  const { profile, meals, exercises, summary, selectedDate, reminders } = useApp();
+  const { profile, foods, foodPreferences, meals, exercises, summary, selectedDate, reminders, addTemplate } = useApp();
   if (!profile) return null;
 
   const plannedMealTypes: MealType[] = reminders?.snack.trim()
@@ -17,6 +18,9 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (tab: RootTab) => 
     : ['breakfast', 'lunch', 'dinner'];
   const mealCount = new Set(meals.filter(item => plannedMealTypes.includes(item.mealType)).map(item => item.mealType)).size;
   const recommendation = getMealRecommendation(profile, summary, mealCount, plannedMealTypes.length);
+  const recordedMealTypes = new Set(meals.map(item => item.mealType));
+  const nextMealType = plannedMealTypes.find(type => !recordedMealTypes.has(type)) ?? plannedMealTypes[plannedMealTypes.length - 1];
+  const miniMeals = buildMiniMealRecommendations({ foods, preferences: foodPreferences, mealType: nextMealType, calorieBudget: recommendation.calories });
   const goalComparison = calculateGoals({
     gender: profile.gender,
     age: profile.age,
@@ -28,6 +32,24 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (tab: RootTab) => 
   });
   const remaining = Math.max(0, profile.calorieGoal - summary.calories);
   const todayLabel = selectedDate === dateKey() ? '今天' : selectedDate;
+
+  const confirmMiniMeal = (item: MiniMealRecommendation) => {
+    Alert.alert(
+      `添加到${MEAL_LABELS[nextMealType]}？`,
+      `${item.template.name}\n${item.template.description}\n约 ${item.calories} kcal · 蛋白质 ${item.protein}g`,
+      [
+        { text: '取消', style: 'cancel' },
+        {
+          text: '确认添加',
+          onPress: () => {
+            void addTemplate(item.template, nextMealType)
+              .then(() => Alert.alert('记录成功', `“${item.template.name}”已添加到${MEAL_LABELS[nextMealType]}。`))
+              .catch(error => Alert.alert('无法添加', error instanceof Error ? error.message : '请稍后重试'));
+          },
+        },
+      ],
+    );
+  };
 
   return (
     <Screen>
@@ -82,6 +104,31 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (tab: RootTab) => 
           <Ionicons name="leaf-outline" size={15} color={colors.primary} />
           <Text style={[styles.liverHintText, { color: colors.textMuted }]}>饱和脂肪建议 ≤ {getSaturatedFatLimit(profile.fatGoal)}g/天；少用猪油、黄油和肥肉，优先鱼类、少量坚果及植物油。</Text>
         </View>
+        <View style={[styles.miniDivider, { backgroundColor: colors.border }]} />
+        <View style={styles.miniHeadingRow}>
+          <View>
+            <Text style={[styles.miniHeading, { color: colors.text }]}>{MEAL_LABELS[nextMealType]}迷你套餐</Text>
+            <Text style={[styles.miniSubheading, { color: colors.textMuted }]}>结合历史偏好与本餐预算，可确认后一键记录</Text>
+          </View>
+          <Text style={[styles.miniCount, { color: colors.primaryDark }]}>{miniMeals.length ? `${miniMeals.length} 套` : '预算不足'}</Text>
+        </View>
+        {miniMeals.length ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.miniMealList}>
+            {miniMeals.map(item => (
+              <View key={item.template.id} style={[styles.miniMealCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <Text style={[styles.miniBadge, { color: colors.primaryDark, backgroundColor: colors.primarySoft }]}>{item.badge}</Text>
+                <Text style={[styles.miniMealName, { color: colors.text }]}>{item.template.name}</Text>
+                <Text style={[styles.miniMealDescription, { color: colors.textMuted }]} numberOfLines={3}>{item.template.description}</Text>
+                <Text style={[styles.miniNutrition, { color: colors.text }]}>{item.calories} kcal · 蛋白质 {item.protein}g</Text>
+                <Pressable onPress={() => confirmMiniMeal(item)} style={({ pressed }) => [styles.miniAddButton, { backgroundColor: colors.primary, opacity: pressed ? 0.75 : 1 }]}>
+                  <Text style={styles.miniAddButtonText}>一键记录</Text>
+                </Pressable>
+              </View>
+            ))}
+          </ScrollView>
+        ) : (
+          <Text style={[styles.miniEmpty, { color: colors.textMuted }]}>本餐剩余建议不足 80 kcal，先查看今天已记录的食物，避免重复添加。</Text>
+        )}
       </Card>
 
       <SectionTitle title="方便常备的减脂友好食物" action={<Text style={{ color: colors.textMuted, fontSize: 10 }}>左右滑动</Text>} />
@@ -182,6 +229,20 @@ const styles = StyleSheet.create({
   limit: { fontSize: 11 },
   liverHint: { borderRadius: 13, padding: 11, flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   liverHintText: { flex: 1, fontSize: 10.5, lineHeight: 16 },
+  miniDivider: { height: StyleSheet.hairlineWidth },
+  miniHeadingRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 10 },
+  miniHeading: { fontSize: 13, fontWeight: '900' },
+  miniSubheading: { fontSize: 9.5, marginTop: 3 },
+  miniCount: { fontSize: 10, fontWeight: '800' },
+  miniMealList: { gap: 10, paddingRight: 3 },
+  miniMealCard: { width: 226, minHeight: 190, borderWidth: 1, borderRadius: 17, padding: 12 },
+  miniBadge: { alignSelf: 'flex-start', overflow: 'hidden', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4, fontSize: 9, fontWeight: '800' },
+  miniMealName: { fontSize: 13, fontWeight: '900', marginTop: 8 },
+  miniMealDescription: { fontSize: 10, lineHeight: 15, marginTop: 5, flex: 1 },
+  miniNutrition: { fontSize: 10.5, fontWeight: '800', marginTop: 8 },
+  miniAddButton: { minHeight: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center', marginTop: 10 },
+  miniAddButtonText: { color: '#fff', fontSize: 11, fontWeight: '900' },
+  miniEmpty: { fontSize: 10.5, lineHeight: 16 },
   foodTipsList: { gap: 10, paddingRight: 4 },
   foodTipCard: { width: 270, minHeight: 126, borderWidth: 1, borderRadius: 18, padding: 14, flexDirection: 'row', alignItems: 'flex-start', gap: 11 },
   foodTipIcon: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
