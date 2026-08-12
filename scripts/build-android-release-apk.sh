@@ -58,15 +58,16 @@ cd "$mobile_dir"
 printf '%s\n' "检查 TypeScript..."
 npm run typecheck
 
-# macOS/iCloud may leave numbered conflict copies in Gradle's generated output
-# (for example, "gradleResValues 3.xml"). They are disposable build products
-# and otherwise make Android's resource merger fail with duplicate resources.
-generated_app_dir="$android_dir/app/build/generated"
-if [ -d "$generated_app_dir" ]; then
-  find "$generated_app_dir" -type f \( \
-    -name 'gradleResValues [0-9]*.xml' -o \
-    -name 'index.android [0-9]*.bundle' \
-  \) -print -delete
+# macOS/iCloud may leave numbered conflict copies anywhere in Gradle's build
+# output (for example, "values 3.xml"). The directory contains disposable
+# build products only; remove conflict copies without discarding valid caches.
+android_build_dir="$android_dir/app/build"
+if [ -d "$android_build_dir" ]; then
+  conflict_count=$(find "$android_build_dir" -type f -name '* [0-9].*' | wc -l | tr -d ' ')
+  if [ "$conflict_count" -gt 0 ]; then
+    printf '%s\n' "清理 $conflict_count 个 macOS/iCloud 构建冲突副本..."
+    find "$android_build_dir" -type f -name '* [0-9].*' -delete
+  fi
 fi
 release_output_dir="$android_dir/app/build/outputs/apk/release"
 if [ -d "$release_output_dir" ]; then
