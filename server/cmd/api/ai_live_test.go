@@ -15,7 +15,7 @@ func TestDeepSeekLive(t *testing.T) {
 	if apiKey == "" {
 		t.Skip("DEEPSEEK_TEST_API_KEY is not set")
 	}
-	client := newAIClient("https://api.deepseek.com", apiKey, "deepseek-chat")
+	client := newAIClient("https://api.deepseek.com", apiKey, "deepseek-v4-flash")
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 

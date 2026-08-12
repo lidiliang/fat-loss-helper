@@ -27,14 +27,14 @@ services:
       JWT_SECRET: ${JWT_SECRET:?请先设置至少32位的JWT_SECRET}
       ALLOW_ORIGIN: "*"
       AI_BASE_URL: ${AI_BASE_URL:-https://api.deepseek.com}
-      AI_MODEL: ${AI_MODEL:-deepseek-chat}
+      AI_MODEL: ${AI_MODEL:-deepseek-v4-flash}
       AI_API_KEY: ${AI_API_KEY:-}
       AI_DAILY_LIMIT: ${AI_DAILY_LIMIT:-50}
     depends_on:
       postgres:
         condition: service_healthy
     ports:
-      - "8080:8080"
+      - "${API_HOST_PORT:-5003}:8080"
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/health"]
       interval: 10s

@@ -101,7 +101,7 @@ func loadConfig() config {
 		AllowOrigin:  envOr("ALLOW_ORIGIN", "*"),
 		AIBaseURL:    envOr("AI_BASE_URL", "https://api.deepseek.com"),
 		AIAPIKey:     strings.TrimSpace(os.Getenv("AI_API_KEY")),
-		AIModel:      envOr("AI_MODEL", "deepseek-chat"),
+		AIModel:      envOr("AI_MODEL", "deepseek-v4-flash"),
 		AIDailyLimit: envIntOr("AI_DAILY_LIMIT", 50),
 	}
 	if len(cfg.JWTSecret) < 24 {

@@ -59,13 +59,13 @@ docker-compose.yml      PostgreSQL 和 API 本地编排
 
 ### 1. 使用 Docker 启动服务端
 
-#### 推荐：Docker Compose 一键启动
+#### 方式一：Docker Compose 一键启动
 
-Compose 会构建 `fat-loss-helper-api:latest` 后端镜像，同时启动 PostgreSQL。PostgreSQL 容器端口为 `5432`，映射到宿主机 `5433`，避免与本机 PostgreSQL 冲突。
+Compose 会构建 `fat-loss-helper-api:latest` 后端镜像，同时启动 PostgreSQL。PostgreSQL 容器端口映射到宿主机 `5433`，API 默认映射到宿主机 `5003`。Compose 中的服务名是 `api` 和 `postgres`，容器实际名称通常带项目名前缀；下列 `docker-compose ... api` 命令只适用于本方式。
 
 ```bash
-export JWT_SECRET="$(openssl rand -hex 32)"
-export AI_API_KEY='填写你的DeepSeek API Key'
+cp .env.example .env
+# 编辑 .env，固定保存 JWT_SECRET 和 AI_API_KEY，不要每次重建都生成新的 JWT_SECRET。
 docker-compose up --build -d
 docker-compose ps
 ```
@@ -74,7 +74,7 @@ docker-compose ps
 
 ```bash
 docker-compose logs -f api
-curl http://127.0.0.1:8080/health
+curl http://127.0.0.1:5003/health
 ```
 
 正常响应为 `{"status":"ok"}`。停止服务不会删除数据库数据：
@@ -85,14 +85,19 @@ docker-compose down
 
 不要执行 `docker-compose down -v`，该命令会删除 PostgreSQL 数据卷。
 
-#### 分别使用 `docker run` 启动
+#### 方式二：分别使用 `docker run` 启动
 
-以下命令与 Compose 方式二选一，不要同时启动两套容器。如果网络已经存在，`docker network create` 无需重复执行。
+以下命令与 Compose 方式二选一，不要同时启动两套容器。此方式的容器名明确为 `qingzhi-api` 和 `qingzhi-postgres`，所以查看日志应使用 `docker logs -f qingzhi-api`，不能使用 Compose 的服务名命令。
 
-先创建专用网络和 PostgreSQL 容器：
+网络只需创建一次；已存在时跳过第一条命令：
 
 ```bash
 docker network create qingzhi-network
+```
+
+首次部署时才创建 PostgreSQL 容器：
+
+```bash
 docker run -d \
   --name qingzhi-postgres \
   --restart unless-stopped \
@@ -105,28 +110,87 @@ docker run -d \
   postgres:17-alpine
 ```
 
-构建并启动后端镜像：
+数据库数据保存在命名卷 `qingzhi_postgres_data` 中。以后更新 API 时，不要再次执行上述 PostgreSQL 创建命令；如果数据库容器只是停止了，执行 `docker start qingzhi-postgres` 即可。
+
+首次启动 API 前，在根目录创建不会提交的 `.env`，并固定保存密钥：
+
+```env
+JWT_SECRET=填写至少32位且后续保持不变的随机密钥
+AI_API_KEY=填写你的DeepSeek_API_Key
+AI_BASE_URL=https://api.deepseek.com
+AI_MODEL=deepseek-v4-flash
+AI_DAILY_LIMIT=50
+```
+
+构建并首次启动后端：
 
 ```bash
 docker build -t fat-loss-helper-api:latest ./server
-export JWT_SECRET="$(openssl rand -hex 32)"
 docker run -d \
   --name qingzhi-api \
   --restart unless-stopped \
   --network qingzhi-network \
+  --env-file .env \
   -e DATABASE_URL='postgres://qingzhi:qingzhi@qingzhi-postgres:5432/qingzhi?sslmode=disable' \
-  -e JWT_SECRET="$JWT_SECRET" \
   -e ALLOW_ORIGIN='*' \
-  -e AI_API_KEY='填写你的DeepSeek API Key' \
-  -e AI_MODEL='deepseek-chat' \
-  -e AI_DAILY_LIMIT='50' \
-  -p 8080:8080 \
+  -p 5003:8080 \
   fat-loss-helper-api:latest
+```
+
+查看 `docker run` 方式的日志和健康状态：
+
+```bash
+docker logs -f qingzhi-api
+curl http://127.0.0.1:5003/health
+```
+
+##### 安全更新已有 API 容器
+
+`docker run --name qingzhi-api ...` 报“名称已被使用”时，冲突的是旧的同名**容器**，不是镜像。先构建新镜像，再只停止和删除 API 容器，最后用上面的 `docker run` 命令重新创建：
+
+```bash
+docker build -t fat-loss-helper-api:latest ./server
+docker stop qingzhi-api
+docker rm qingzhi-api
+
+docker run -d \
+  --name qingzhi-api \
+  --restart unless-stopped \
+  --network qingzhi-network \
+  --env-file .env \
+  -e DATABASE_URL='postgres://qingzhi:qingzhi@qingzhi-postgres:5432/qingzhi?sslmode=disable' \
+  -e ALLOW_ORIGIN='*' \
+  -p 5003:8080 \
+  fat-loss-helper-api:latest
+```
+
+不需要执行 `docker image rm fat-loss-helper-api:latest`：同标签重新 `docker build` 会直接更新镜像标签，正在运行的旧容器则要按上面流程重建。镜像本身不保存 PostgreSQL 业务数据，数据库持久化依赖的是命名卷。
+
+`docker rm qingzhi-api` 只删除无状态的 API 容器，不会删除 `qingzhi-postgres`、PostgreSQL 镜像或 `qingzhi_postgres_data` 数据卷。更新前可用以下命令确认数据库及数据卷仍存在：
+
+```bash
+docker ps -a --filter name=qingzhi-postgres
+docker volume inspect qingzhi_postgres_data
+```
+
+为避免误删已有数据，更新 API 时不要执行以下操作：
+
+```text
+docker rm qingzhi-postgres
+docker volume rm qingzhi_postgres_data
+docker-compose down -v
+docker system prune --volumes
+```
+
+如果旧 `.env` 中仍是 `AI_MODEL=deepseek-chat`，请先改为 `AI_MODEL=deepseek-v4-flash` 再重建 API 容器。重建后可只查看模型名，不输出 API Key：
+
+```bash
+docker exec qingzhi-api printenv AI_MODEL
 ```
 
 容器之间通过 `qingzhi-network` 通信，因此 API 使用数据库容器名 `qingzhi-postgres:5432`，不能写成 `127.0.0.1:5433`。后者只用于从宿主机直接访问数据库。
 
-AI Key 只能配置在服务端环境变量或未提交的根目录 `.env` 中，不能写入移动端、APK、源码或 Git。未配置 `AI_API_KEY` 时，登录、记录和备份仍可正常使用，AI 接口会返回明确的未配置提示。默认使用 `https://api.deepseek.com` 的 `deepseek-chat`；三类 AI 功能共享每个账号北京时间自然日 50 次限额，失败调用也会计入，以防反复重试耗尽上游额度。
+AI Key 只能配置在服务端环境变量或未提交的根目录 `.env` 中，不能写入移动端、APK、源码或 Git。未配置 `AI_API_KEY` 时，登录、记录和备份仍可正常使用，AI 接口会返回明确的未配置提示。默认使用 `https://api.deepseek.com` 的 `deepseek-v4-flash`；这是 DeepSeek 官方当前公开的 OpenAI 兼容 API 模型 ID，不应继续使用旧的 `deepseek-chat`。可在 [DeepSeek Models & Pricing](https://api-docs.deepseek.com/quick_start/pricing/) 核对最新模型标识。三类 AI 功能共享每个账号北京时间自然日 50 次限额，失败调用也会计入，以防反复重试耗尽上游额度。
 
 如果需要在宿主机使用 `go run` 调试后端：
 
@@ -145,12 +209,12 @@ npm install
 npm start
 ```
 
-- Android 模拟器默认通过 `http://10.0.2.2:8080/api/v1` 访问电脑。
+- Docker API 按本文配置运行时，Android 模拟器应使用 `http://10.0.2.2:5003/api/v1` 访问电脑。
 - Expo Go 真机调试时，应用会优先从 Expo 开发地址推断电脑的局域网 IP。
 - 如果自动推断不适用，请显式设置：
 
 ```bash
-EXPO_PUBLIC_API_URL='http://你的电脑局域网IP:8080/api/v1' npm start
+EXPO_PUBLIC_API_URL='http://你的电脑局域网IP:5003/api/v1' npm start
 ```
 
 手机和电脑需要位于同一局域网，电脑防火墙需允许 `8080` 端口。生产部署必须使用 HTTPS：
@@ -232,10 +296,10 @@ npx expo run:android --variant release
 cd mobile && npm run typecheck
 cd server && go test ./...
 cd mobile && npm run export:android
-./scripts/smoke-api.sh
+./scripts/smoke-api.sh http://127.0.0.1:5003/api/v1
 ```
 
-最后一项要求 API 已在 `127.0.0.1:8080` 运行。
+最后一项要求 Docker API 已在宿主机 `127.0.0.1:5003` 运行；若你直接使用 `go run` 的默认 `8080` 端口，则可省略脚本后的 URL 参数。
 
 ## 关键算法
 
