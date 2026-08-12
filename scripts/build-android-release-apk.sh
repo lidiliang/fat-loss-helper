@@ -58,6 +58,17 @@ cd "$mobile_dir"
 printf '%s\n' "检查 TypeScript..."
 npm run typecheck
 
+# macOS/iCloud may leave numbered conflict copies in Gradle's generated output
+# (for example, "gradleResValues 3.xml"). They are disposable build products
+# and otherwise make Android's resource merger fail with duplicate resources.
+generated_app_dir="$android_dir/app/build/generated"
+if [ -d "$generated_app_dir" ]; then
+  find "$generated_app_dir" -type f \( \
+    -name 'gradleResValues [0-9]*.xml' -o \
+    -name 'index.android [0-9]*.bundle' \
+  \) -print -delete
+fi
+
 if [ ! -x "$android_dir/gradlew" ]; then
   printf '%s\n' "首次构建：生成 Android 原生工程..."
   npx expo prebuild --platform android --no-install
