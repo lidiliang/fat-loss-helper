@@ -26,6 +26,10 @@ services:
       DATABASE_URL: postgres://qingzhi:qingzhi@postgres:5432/qingzhi?sslmode=disable
       JWT_SECRET: ${JWT_SECRET:?请先设置至少32位的JWT_SECRET}
       ALLOW_ORIGIN: "*"
+      AI_BASE_URL: ${AI_BASE_URL:-https://api.deepseek.com}
+      AI_MODEL: ${AI_MODEL:-deepseek-chat}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_DAILY_LIMIT: ${AI_DAILY_LIMIT:-50}
     depends_on:
       postgres:
         condition: service_healthy

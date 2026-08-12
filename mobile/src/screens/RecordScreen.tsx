@@ -4,8 +4,11 @@ import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'rea
 import { AppText, Card, Chip, EmptyState, Field, Header, PrimaryButton, Screen, SectionTitle } from '../components/ui';
 import { EXERCISES, MEAL_LABELS } from '../data/seed';
 import { dateKey, estimateStairClimbingMinutes } from '../lib/calculations';
+import { estimateFoodWithAI, generateDailyAISummary } from '../lib/api';
+import { buildAIDailyContext } from '../lib/ai';
 import { useApp } from '../context/AppContext';
-import { FoodItem, FoodMeasureUnit, FoodServing, MealTemplate, MealType } from '../types';
+import { useAuth } from '../context/AuthContext';
+import { AIFoodEstimate, FoodItem, FoodMeasureUnit, FoodServing, MealTemplate, MealType } from '../types';
 import { useColors } from '../theme';
 
 type RecordMode = 'food' | 'exercise' | 'body';
@@ -213,7 +216,9 @@ function ModeButton({ label, icon, selected, onPress }: { label: string; icon: k
 function MealHistory({ mealType }: { mealType: MealType }) {
   const colors = useColors();
   const app = useApp();
+  const { token } = useAuth();
   const items = app.meals.filter(item => item.mealType === mealType);
+  const [aiLoading, setAILoading] = useState(false);
   const saveAsTemplate = async () => {
     try {
       await app.createTemplateFromMeal(mealType, `我的${MEAL_LABELS[mealType]}组合`);
@@ -221,6 +226,24 @@ function MealHistory({ mealType }: { mealType: MealType }) {
     } catch (error) {
       Alert.alert('无法保存', error instanceof Error ? error.message : '请稍后再试');
     }
+  };
+  const completeDinner = () => {
+    if (!token || !app.profile) return Alert.alert('请先登录');
+    Alert.alert('完成晚餐并生成总结？', '会将今天必要的健康档案、饮食与运动数据发送给 DeepSeek，结果永久保存在服务端。', [
+      { text: '取消', style: 'cancel' },
+      { text: '同意并生成', onPress: async () => {
+        setAILoading(true);
+        try {
+          const context = buildAIDailyContext({ date: app.selectedDate, profile: app.profile!, summary: app.summary, meals: app.meals, exercises: app.exercises });
+          await generateDailyAISummary(token, context);
+          Alert.alert('今日总结已生成', '可前往首页的“DeepSeek 营养助手”查看。');
+        } catch (error) {
+          Alert.alert('无法生成总结', error instanceof Error ? error.message : '请稍后重试');
+        } finally {
+          setAILoading(false);
+        }
+      } },
+    ]);
   };
   return (
     <>
@@ -243,6 +266,9 @@ function MealHistory({ mealType }: { mealType: MealType }) {
           </View>
         ))}
       </Card>
+      {mealType === 'dinner' && items.length > 0 && app.selectedDate === dateKey() ? (
+        <PrimaryButton label="完成晚餐并生成今日总结" onPress={completeDinner} loading={aiLoading} secondary />
+      ) : null}
     </>
   );
 }
@@ -427,7 +453,12 @@ function FoodWeightModal({ food, onClose, onSave, onUpdateServing, saving, mealT
   return (
     <Modal visible={Boolean(food)} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.modalBackdrop} onPress={onClose} />
-      <View style={[styles.sheet, { backgroundColor: colors.surface }]}>
+      <ScrollView
+        style={[styles.sheet, { backgroundColor: colors.surface }]}
+        contentContainerStyle={styles.sheetScroll}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
         <View style={[styles.handle, { backgroundColor: colors.border }]} />
         <Text style={[styles.sheetTitle, { color: colors.text }]}>{food?.name}</Text>
         <Text style={[styles.sheetSubtitle, { color: colors.textMuted }]}>添加到{MEAL_LABELS[mealType]} · 约 {estimated} kcal</Text>
@@ -465,7 +496,7 @@ function FoodWeightModal({ food, onClose, onSave, onUpdateServing, saving, mealT
           </View>
         ) : null}
         <PrimaryButton label="确认记录" onPress={submit} loading={saving} />
-      </View>
+      </ScrollView>
     </Modal>
   );
 }
@@ -473,6 +504,7 @@ function FoodWeightModal({ food, onClose, onSave, onUpdateServing, saving, mealT
 function CustomFoodModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const colors = useColors();
   const app = useApp();
+  const { token } = useAuth();
   const [name, setName] = useState('');
   const [calories, setCalories] = useState('');
   const [protein, setProtein] = useState('');
@@ -481,6 +513,9 @@ function CustomFoodModal({ visible, onClose }: { visible: boolean; onClose: () =
   const [nutritionUnit, setNutritionUnit] = useState<FoodMeasureUnit>('g');
   const [unit, setUnit] = useState('');
   const [unitAmount, setUnitAmount] = useState('');
+  const [description, setDescription] = useState('');
+  const [estimate, setEstimate] = useState<AIFoodEstimate | null>(null);
+  const [estimating, setEstimating] = useState(false);
   const unitLabel = nutritionUnit === 'ml' ? '毫升' : '克';
   const submit = async () => {
     if (!name.trim() || Number(calories) <= 0) return Alert.alert(`请填写名称和每 100${nutritionUnit === 'ml' ? 'mL' : 'g'} 热量`);
@@ -491,12 +526,39 @@ function CustomFoodModal({ visible, onClose }: { visible: boolean; onClose: () =
       nutritionUnit,
       servings: unit.trim() ? [{ label: unit.trim(), amount: Number(unitAmount) }] : [],
     });
-    setName(''); setCalories(''); setProtein(''); setFat(''); setCarb(''); setNutritionUnit('g'); setUnit(''); setUnitAmount(''); onClose();
+    setName(''); setCalories(''); setProtein(''); setFat(''); setCarb(''); setNutritionUnit('g'); setUnit(''); setUnitAmount(''); setDescription(''); setEstimate(null); onClose();
+  };
+  const estimateWithAI = async () => {
+    if (!name.trim()) return Alert.alert('请先填写食物名称');
+    if (!token) return Alert.alert('请先登录');
+    setEstimating(true);
+    try {
+      const result = await estimateFoodWithAI(token, name.trim(), description.trim());
+      const value = result.estimate;
+      setEstimate(value);
+      setName(value.name || name.trim());
+      setNutritionUnit(value.nutritionUnit);
+      setCalories(String(value.calories));
+      setProtein(String(value.protein));
+      setFat(String(value.fat));
+      setCarb(String(value.carb));
+      setUnit(value.servingLabel || '');
+      setUnitAmount(value.servingLabel && value.servingAmount > 0 ? String(value.servingAmount) : '');
+    } catch (error) {
+      Alert.alert('无法估算', error instanceof Error ? error.message : '请稍后重试');
+    } finally {
+      setEstimating(false);
+    }
   };
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.modalBackdrop} onPress={onClose} />
-      <View style={[styles.sheet, { backgroundColor: colors.surface }]}>
+      <ScrollView
+        style={[styles.sheet, { backgroundColor: colors.surface }]}
+        contentContainerStyle={styles.sheetScroll}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
         <View style={[styles.handle, { backgroundColor: colors.border }]} />
         <Text style={[styles.sheetTitle, { color: colors.text }]}>添加自定义食物</Text>
         <Text style={[styles.sheetSubtitle, { color: colors.textMuted }]}>先选择营养标签基准；常见食物请先搜索内置食物库</Text>
@@ -505,6 +567,15 @@ function CustomFoodModal({ visible, onClose }: { visible: boolean; onClose: () =
           <Chip label="每100毫升" selected={nutritionUnit === 'ml'} onPress={() => setNutritionUnit('ml')} small />
         </View>
         <Field label="食物名称" value={name} onChangeText={setName} placeholder="例如：自制杂粮饼" />
+        <Field label="品牌、包装或烹饪方式（可选）" value={description} onChangeText={setDescription} placeholder="例如：每袋240克、清蒸、无糖" multiline />
+        <PrimaryButton label="让 DeepSeek 估算并填入" onPress={estimateWithAI} loading={estimating} secondary />
+        {estimate ? (
+          <View style={[styles.aiEstimate, { backgroundColor: colors.primarySoft }]}>
+            <Text style={[styles.aiEstimateTitle, { color: colors.primaryDark }]}>AI 估算 · 置信度 {estimate.confidence === 'high' ? '高' : estimate.confidence === 'medium' ? '中' : '低'}</Text>
+            <Text style={[styles.aiEstimateText, { color: colors.text }]}>{estimate.basis}</Text>
+            <Text style={[styles.aiEstimateText, { color: colors.textMuted }]}>{estimate.notice}</Text>
+          </View>
+        ) : null}
         <View style={styles.fieldRow}><Field label="热量" value={calories} onChangeText={setCalories} keyboardType="decimal-pad" suffix="kcal" /><Field label="蛋白质" value={protein} onChangeText={setProtein} keyboardType="decimal-pad" suffix="g" /></View>
         <View style={styles.fieldRow}><Field label="脂肪" value={fat} onChangeText={setFat} keyboardType="decimal-pad" suffix="g" /><Field label="碳水" value={carb} onChangeText={setCarb} keyboardType="decimal-pad" suffix="g" /></View>
         <Text style={[styles.customUnitTitle, { color: colors.text }]}>常用份量（可选）</Text>
@@ -512,8 +583,9 @@ function CustomFoodModal({ visible, onClose }: { visible: boolean; onClose: () =
           {['个', '杯', '片', '小块', '碗', '袋'].map(value => <Chip key={value} label={value} selected={unit === value} onPress={() => setUnit(value)} small />)}
         </View>
         <View style={styles.fieldRow}><Field label="单位" value={unit} onChangeText={setUnit} placeholder="例如：个" /><Field label="每单位约合" value={unitAmount} onChangeText={setUnitAmount} keyboardType="decimal-pad" suffix={unitLabel} /></View>
+        <Text style={[styles.aiEstimateNotice, { color: colors.textMuted }]}>AI 只会协助填表，不会自动保存。估算仅供记录参考，请优先以食品包装营养标签为准。</Text>
         <PrimaryButton label="保存食物" onPress={submit} />
-      </View>
+      </ScrollView>
     </Modal>
   );
 }
@@ -549,7 +621,8 @@ const styles = StyleSheet.create({
   bodyValue: { fontSize: 14, fontWeight: '900', flex: 1 },
   waistValue: { fontSize: 11 },
   modalBackdrop: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: '#00000066' },
-  sheet: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 22, paddingTop: 12, paddingBottom: 34, borderTopLeftRadius: 28, borderTopRightRadius: 28, gap: 15 },
+  sheet: { position: 'absolute', left: 0, right: 0, bottom: 0, maxHeight: '92%', borderTopLeftRadius: 28, borderTopRightRadius: 28 },
+  sheetScroll: { paddingHorizontal: 22, paddingTop: 12, paddingBottom: 34, gap: 15 },
   handle: { width: 42, height: 5, borderRadius: 99, alignSelf: 'center', marginBottom: 5 },
   sheetTitle: { fontSize: 22, fontWeight: '900' },
   sheetSubtitle: { fontSize: 12, marginTop: -8 },
@@ -561,4 +634,8 @@ const styles = StyleSheet.create({
   servingEditorTitle: { fontSize: 12, fontWeight: '800' },
   servingEditorHint: { fontSize: 9.5, lineHeight: 14 },
   customUnitTitle: { fontSize: 13, fontWeight: '800', marginBottom: -7 },
+  aiEstimate: { borderRadius: 14, padding: 12, gap: 5 },
+  aiEstimateTitle: { fontSize: 11, fontWeight: '900' },
+  aiEstimateText: { fontSize: 9.5, lineHeight: 15 },
+  aiEstimateNotice: { fontSize: 9.5, lineHeight: 15, marginTop: -5 },
 });

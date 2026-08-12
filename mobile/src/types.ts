@@ -129,6 +129,53 @@ export interface DailySummary {
   netCalories: number;
 }
 
+export interface AIDailyContext {
+  date: string;
+  version: string;
+  profile: {
+    gender: Gender;
+    age: number;
+    heightCm: number;
+    weightKg: number;
+    waistCm: number;
+    fattyLiverLevel: FattyLiverLevel;
+    activityLevel: ActivityLevel;
+    weeklyLossKg: number;
+  };
+  summary: DailySummary & {
+    calorieGoal: number;
+    proteinGoal: number;
+    fatGoal: number;
+    carbGoal: number;
+  };
+  meals: Array<Pick<MealRecord, 'mealType' | 'foodName' | 'weightG' | 'portionLabel' | 'calories' | 'protein' | 'fat' | 'carb'>>;
+  exercises: Array<Pick<ExerciseRecord, 'exerciseType' | 'durationMin' | 'distanceKm' | 'caloriesBurned'>>;
+}
+
+export interface AISummaryRecord {
+  id: string;
+  responseText: string;
+  contextVersion: string;
+  createdAt: string;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+
+export interface AIFoodEstimate {
+  name: string;
+  nutritionUnit: FoodMeasureUnit;
+  calories: number;
+  protein: number;
+  fat: number;
+  carb: number;
+  servingLabel: string;
+  servingAmount: number;
+  confidence: 'high' | 'medium' | 'low';
+  basis: string;
+  notice: string;
+}
+
 export interface DailyIntake {
   date: string;
   calories: number;

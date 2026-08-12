@@ -1,11 +1,15 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Card, Header, PrimaryButton, ProgressBar, Screen, SectionTitle } from '../components/ui';
+import { Card, Field, Header, PrimaryButton, ProgressBar, Screen, SectionTitle } from '../components/ui';
 import { CONVENIENT_FAT_LOSS_FOODS, FATTY_LIVER_LEVELS, MEAL_LABELS } from '../data/seed';
 import { calculateGoals, dateKey, getMealRecommendation, getSaturatedFatLimit } from '../lib/calculations';
 import { buildMiniMealRecommendations, MiniMealRecommendation } from '../lib/mealRecommendations';
+import { askNutritionAI, generateDailyAISummary, getDailyAISummary } from '../lib/api';
+import { buildAIDailyContext } from '../lib/ai';
 import { useApp } from '../context/AppContext';
-import { MealType, RootTab } from '../types';
+import { useAuth } from '../context/AuthContext';
+import { AISummaryRecord, MealType, RootTab } from '../types';
 import { useColors } from '../theme';
 
 export function DashboardScreen({ onNavigate }: { onNavigate: (tab: RootTab) => void }) {
@@ -172,6 +176,8 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (tab: RootTab) => 
         </Card>
       )}
 
+      <AIAssistantCard />
+
       <SectionTitle title="方便常备的减脂友好食物" action={<Text style={{ color: colors.textMuted, fontSize: 10 }}>左右滑动</Text>} />
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.foodTipsList}>
         {CONVENIENT_FAT_LOSS_FOODS.map(item => (
@@ -245,6 +251,100 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (tab: RootTab) => 
   );
 }
 
+function AIAssistantCard() {
+  const colors = useColors();
+  const { token } = useAuth();
+  const app = useApp();
+  const [summaryRecord, setSummaryRecord] = useState<AISummaryRecord | null>(null);
+  const [remaining, setRemaining] = useState<number | null>(null);
+  const [question, setQuestion] = useState('');
+  const [answer, setAnswer] = useState('');
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [asking, setAsking] = useState(false);
+  const context = useMemo(() => app.profile ? buildAIDailyContext({
+    date: app.selectedDate,
+    profile: app.profile,
+    summary: app.summary,
+    meals: app.meals,
+    exercises: app.exercises,
+  }) : null, [app.selectedDate, app.profile, app.summary, app.meals, app.exercises]);
+
+  useEffect(() => {
+    setAnswer('');
+    if (!token) return;
+    getDailyAISummary(token, app.selectedDate)
+      .then(result => {
+        setSummaryRecord(result.summary);
+        setRemaining(result.remaining);
+      })
+      .catch(() => {
+        setSummaryRecord(null);
+        setRemaining(null);
+      });
+  }, [token, app.selectedDate]);
+
+  const generate = async () => {
+    if (!token || !context) return Alert.alert('请先登录');
+    setSummaryLoading(true);
+    try {
+      const result = await generateDailyAISummary(token, context, Boolean(summaryRecord));
+      setSummaryRecord(result.summary);
+      setRemaining(result.remaining);
+    } catch (error) {
+      Alert.alert('无法生成总结', error instanceof Error ? error.message : '请稍后重试');
+    } finally {
+      setSummaryLoading(false);
+    }
+  };
+
+  const ask = async () => {
+    if (!token || !context || !question.trim()) return Alert.alert('请先输入问题');
+    setAsking(true);
+    try {
+      const result = await askNutritionAI(token, question.trim(), context);
+      setAnswer(result.answer);
+      setRemaining(result.remaining);
+    } catch (error) {
+      Alert.alert('暂时无法回答', error instanceof Error ? error.message : '请稍后重试');
+    } finally {
+      setAsking(false);
+    }
+  };
+
+  const isLatest = Boolean(summaryRecord && context && summaryRecord.contextVersion === context.version);
+  return (
+    <Card style={styles.aiCard}>
+      <View style={styles.aiHeader}>
+        <View style={[styles.recommendIcon, { backgroundColor: colors.primarySoft }]}><Ionicons name="sparkles" size={18} color={colors.primary} /></View>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.aiTitle, { color: colors.text }]}>DeepSeek 营养助手</Text>
+          <Text style={[styles.aiMeta, { color: colors.textMuted }]}>当日总结与问答会永久保存在服务端{remaining === null ? '' : ` · 今日剩余 ${remaining}/50 次`}</Text>
+        </View>
+      </View>
+      {summaryRecord ? (
+        <View style={[styles.aiAnswer, { backgroundColor: colors.surfaceMuted }]}>
+          <Text style={[styles.aiStatus, { color: isLatest ? colors.primaryDark : colors.orange }]}>{isLatest ? '已按当前记录生成' : '饮食或运动已变化，可重新生成'}</Text>
+          <Text style={[styles.aiAnswerText, { color: colors.text }]}>{summaryRecord.responseText}</Text>
+        </View>
+      ) : <Text style={[styles.aiHint, { color: colors.textMuted }]}>记录饮食和运动后，可让 AI 从热量与三大营养素角度做一次温和复盘。</Text>}
+      <PrimaryButton label={summaryRecord ? '重新生成今日总结' : '生成今日总结'} onPress={generate} loading={summaryLoading} secondary={Boolean(summaryRecord)} />
+      <View style={[styles.miniDivider, { backgroundColor: colors.border }]} />
+      <Text style={[styles.aiQuestionTitle, { color: colors.text }]}>结合当天记录提问</Text>
+      <View style={styles.aiExamples}>
+        {['今天再吃一个130克的小苹果可以吗？', '今天需要少吃一个蛋黄吗？'].map(value => (
+          <Pressable key={value} onPress={() => setQuestion(value)} style={[styles.aiExample, { borderColor: colors.border, backgroundColor: colors.surfaceMuted }]}>
+            <Text style={[styles.aiExampleText, { color: colors.textMuted }]}>{value}</Text>
+          </Pressable>
+        ))}
+      </View>
+      <Field label="你的问题" value={question} onChangeText={setQuestion} placeholder="例如：今晚还能喝一杯脱脂牛奶吗？" multiline />
+      <PrimaryButton label="发送给 DeepSeek" onPress={ask} loading={asking} disabled={!question.trim()} />
+      {answer ? <View style={[styles.aiAnswer, { backgroundColor: colors.primarySoft }]}><Text style={[styles.aiAnswerText, { color: colors.text }]}>{answer}</Text></View> : null}
+      <Text style={[styles.aiDisclaimer, { color: colors.textMuted }]}>AI 建议仅供饮食记录与生活方式参考，不替代医生诊断；重度脂肪肝、血糖异常或明显不适请及时就医。</Text>
+    </Card>
+  );
+}
+
 function MacroCard({ label, value, goal, unit, color, energyShare }: { label: string; value: number; goal: number; unit: string; color: string; energyShare: number }) {
   const colors = useColors();
   return (
@@ -313,6 +413,19 @@ const styles = StyleSheet.create({
   foodTipPortion: { fontSize: 11, fontWeight: '800', marginTop: 3 },
   foodTipReason: { fontSize: 10.5, lineHeight: 16, marginTop: 5 },
   foodTipsDisclaimer: { fontSize: 10, lineHeight: 15, marginTop: -6 },
+  aiCard: { gap: 13 },
+  aiHeader: { flexDirection: 'row', alignItems: 'center', gap: 11 },
+  aiTitle: { fontSize: 15, fontWeight: '900' },
+  aiMeta: { fontSize: 9.5, lineHeight: 14, marginTop: 3 },
+  aiHint: { fontSize: 11, lineHeight: 17 },
+  aiStatus: { fontSize: 10, fontWeight: '900', marginBottom: 7 },
+  aiAnswer: { borderRadius: 14, padding: 13 },
+  aiAnswerText: { fontSize: 11.5, lineHeight: 19 },
+  aiQuestionTitle: { fontSize: 13, fontWeight: '900' },
+  aiExamples: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
+  aiExample: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 7 },
+  aiExampleText: { fontSize: 9.5 },
+  aiDisclaimer: { fontSize: 9.5, lineHeight: 15 },
   noRecords: { padding: 30, alignItems: 'center', gap: 6 },
   noRecordTitle: { fontSize: 15, fontWeight: '800' },
   noRecordDetail: { fontSize: 12, textAlign: 'center' },

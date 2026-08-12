@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/mail"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -25,15 +26,21 @@ import (
 var migrations embed.FS
 
 type config struct {
-	Port        string
-	DatabaseURL string
-	JWTSecret   string
-	AllowOrigin string
+	Port         string
+	DatabaseURL  string
+	JWTSecret    string
+	AllowOrigin  string
+	AIBaseURL    string
+	AIAPIKey     string
+	AIModel      string
+	AIDailyLimit int
 }
 
 type server struct {
-	db        *pgxpool.Pool
-	jwtSecret []byte
+	db           *pgxpool.Pool
+	jwtSecret    []byte
+	ai           *aiClient
+	aiDailyLimit int
 }
 
 type account struct {
@@ -73,7 +80,12 @@ func main() {
 		log.Fatalf("run migrations: %v", err)
 	}
 
-	s := &server{db: pool, jwtSecret: []byte(cfg.JWTSecret)}
+	s := &server{
+		db:           pool,
+		jwtSecret:    []byte(cfg.JWTSecret),
+		ai:           newAIClient(cfg.AIBaseURL, cfg.AIAPIKey, cfg.AIModel),
+		aiDailyLimit: cfg.AIDailyLimit,
+	}
 	router := s.routes(cfg.AllowOrigin)
 	log.Printf("轻脂管家 API listening on :%s", cfg.Port)
 	if err := router.Run(":" + cfg.Port); err != nil {
@@ -83,10 +95,14 @@ func main() {
 
 func loadConfig() config {
 	cfg := config{
-		Port:        envOr("PORT", "8080"),
-		DatabaseURL: envOr("DATABASE_URL", "postgres://qingzhi:qingzhi@localhost:5432/qingzhi?sslmode=disable"),
-		JWTSecret:   envOr("JWT_SECRET", "development-only-change-me-please"),
-		AllowOrigin: envOr("ALLOW_ORIGIN", "*"),
+		Port:         envOr("PORT", "8080"),
+		DatabaseURL:  envOr("DATABASE_URL", "postgres://qingzhi:qingzhi@localhost:5432/qingzhi?sslmode=disable"),
+		JWTSecret:    envOr("JWT_SECRET", "development-only-change-me-please"),
+		AllowOrigin:  envOr("ALLOW_ORIGIN", "*"),
+		AIBaseURL:    envOr("AI_BASE_URL", "https://api.deepseek.com"),
+		AIAPIKey:     strings.TrimSpace(os.Getenv("AI_API_KEY")),
+		AIModel:      envOr("AI_MODEL", "deepseek-chat"),
+		AIDailyLimit: envIntOr("AI_DAILY_LIMIT", 50),
 	}
 	if len(cfg.JWTSecret) < 24 {
 		log.Fatal("JWT_SECRET must contain at least 24 characters")
@@ -95,6 +111,18 @@ func loadConfig() config {
 		log.Fatal("set a strong JWT_SECRET before running in release mode")
 	}
 	return cfg
+}
+
+func envIntOr(key string, fallback int) int {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed <= 0 {
+		log.Fatalf("%s must be a positive integer", key)
+	}
+	return parsed
 }
 
 func envOr(key, fallback string) string {
@@ -153,6 +181,10 @@ func (s *server) routes(allowOrigin string) *gin.Engine {
 	authorized.GET("/me", s.me)
 	authorized.POST("/sync", s.uploadSnapshot)
 	authorized.GET("/sync/latest", s.latestSnapshot)
+	authorized.GET("/ai/daily-summary", s.latestDailySummary)
+	authorized.POST("/ai/daily-summary", s.generateDailySummary)
+	authorized.POST("/ai/food-estimate", s.estimateFood)
+	authorized.POST("/ai/ask", s.askNutritionAssistant)
 	return router
 }
 

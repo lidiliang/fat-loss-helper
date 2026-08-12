@@ -19,6 +19,8 @@
 - 体重/腰围打卡、体重折线和近 30 天摄入达标率
 - 餐前 30 分钟、运动前 1 小时的本地通知
 - 每 6 小时系统后台备份、切后台备份、手动备份与显式恢复
+- DeepSeek 每日减脂总结、结合当日数据的营养问答及自定义食物营养估算
+- AI 调用按账号每日共享 50 次限额，结果与 Token 用量永久保存在 PostgreSQL
 - 暖白＋绿色界面，自动跟随安卓深色模式
 
 ## 应用截图
@@ -63,6 +65,7 @@ Compose 会构建 `fat-loss-helper-api:latest` 后端镜像，同时启动 Postg
 
 ```bash
 export JWT_SECRET="$(openssl rand -hex 32)"
+export AI_API_KEY='填写你的DeepSeek API Key'
 docker-compose up --build -d
 docker-compose ps
 ```
@@ -114,11 +117,16 @@ docker run -d \
   -e DATABASE_URL='postgres://qingzhi:qingzhi@qingzhi-postgres:5432/qingzhi?sslmode=disable' \
   -e JWT_SECRET="$JWT_SECRET" \
   -e ALLOW_ORIGIN='*' \
+  -e AI_API_KEY='填写你的DeepSeek API Key' \
+  -e AI_MODEL='deepseek-chat' \
+  -e AI_DAILY_LIMIT='50' \
   -p 8080:8080 \
   fat-loss-helper-api:latest
 ```
 
 容器之间通过 `qingzhi-network` 通信，因此 API 使用数据库容器名 `qingzhi-postgres:5432`，不能写成 `127.0.0.1:5433`。后者只用于从宿主机直接访问数据库。
+
+AI Key 只能配置在服务端环境变量或未提交的根目录 `.env` 中，不能写入移动端、APK、源码或 Git。未配置 `AI_API_KEY` 时，登录、记录和备份仍可正常使用，AI 接口会返回明确的未配置提示。默认使用 `https://api.deepseek.com` 的 `deepseek-chat`；三类 AI 功能共享每个账号北京时间自然日 50 次限额，失败调用也会计入，以防反复重试耗尽上游额度。
 
 如果需要在宿主机使用 `go run` 调试后端：
 
@@ -209,6 +217,14 @@ npx expo run:android --variant release
 
 健康数据较敏感。正式部署时应使用 HTTPS、强随机 `JWT_SECRET`、独立数据库密码、磁盘加密和定期 PostgreSQL 备份。
 当前预览配置为局域网调试开启了 Android 明文 HTTP；生产打包前应在 `mobile/app.json` 的 `expo-build-properties.android.usesCleartextTraffic` 中改为 `false`。
+
+## DeepSeek 数据与安全边界
+
+- 所有 AI API 都位于现有 JWT 鉴权之后，服务端只按 JWT 中的用户 ID 读取和写入调用记录。
+- App 只发送所选日期的年龄、性别、身高、体重、腰围、脂肪肝等级、目标、当日饮食及运动；不会发送邮箱、密码、JWT、完整历史或备份内容。
+- 每日总结按当日数据版本复用；饮食或运动变化后会提示重新生成。问答、总结、食物估算结果及 Token 用量永久保存，当前不自动清理。
+- 自定义食物的 AI 结果只填充表单，必须由用户确认后才写入本地食物库；营养标签优先于 AI 估算。
+- AI 内容仅作饮食记录和生活方式参考，不提供疾病诊断、处方或停药建议；重度脂肪肝、异常血糖、明显不适或快速减重会提示咨询医生或注册营养师。
 
 ## 验证
 

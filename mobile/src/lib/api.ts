@@ -1,5 +1,5 @@
 import Constants from 'expo-constants';
-import { BackupSnapshot, SessionUser } from '../types';
+import { AIDailyContext, AIFoodEstimate, AISummaryRecord, BackupSnapshot, SessionUser } from '../types';
 
 export interface AuthResponse {
   token: string;
@@ -16,9 +16,9 @@ function resolveApiUrl() {
 
 export const API_URL = resolveApiUrl();
 
-export async function apiRequest<T>(path: string, options: RequestInit = {}, token?: string): Promise<T> {
+export async function apiRequest<T>(path: string, options: RequestInit = {}, token?: string, timeoutMs = 10000): Promise<T> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(`${API_URL}${path}`, {
       ...options,
@@ -63,4 +63,29 @@ export function uploadBackup(token: string, snapshot: BackupSnapshot) {
 
 export function downloadLatestBackup(token: string) {
   return apiRequest<{ snapshot: BackupSnapshot | null; backedUpAt?: string }>('/sync/latest', {}, token);
+}
+
+export function getDailyAISummary(token: string, date: string) {
+  return apiRequest<{ summary: AISummaryRecord | null; remaining: number }>(`/ai/daily-summary?date=${encodeURIComponent(date)}`, {}, token);
+}
+
+export function generateDailyAISummary(token: string, context: AIDailyContext, force = false) {
+  return apiRequest<{ summary: AISummaryRecord; cached: boolean; remaining: number }>('/ai/daily-summary', {
+    method: 'POST',
+    body: JSON.stringify({ context, force }),
+  }, token, 60000);
+}
+
+export function estimateFoodWithAI(token: string, name: string, description: string) {
+  return apiRequest<{ estimate: AIFoodEstimate; remaining: number }>('/ai/food-estimate', {
+    method: 'POST',
+    body: JSON.stringify({ name, description }),
+  }, token, 60000);
+}
+
+export function askNutritionAI(token: string, question: string, context: AIDailyContext) {
+  return apiRequest<{ answer: string; interactionId: string; remaining: number }>('/ai/ask', {
+    method: 'POST',
+    body: JSON.stringify({ question, context }),
+  }, token, 60000);
 }
