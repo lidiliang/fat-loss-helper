@@ -68,6 +68,10 @@ if [ -d "$generated_app_dir" ]; then
     -name 'index.android [0-9]*.bundle' \
   \) -print -delete
 fi
+release_output_dir="$android_dir/app/build/outputs/apk/release"
+if [ -d "$release_output_dir" ]; then
+  find "$release_output_dir" -maxdepth 1 -type f -name 'app-release.apk' -print -delete
+fi
 
 if [ ! -x "$android_dir/gradlew" ]; then
   printf '%s\n' "首次构建：生成 Android 原生工程..."
@@ -107,7 +111,7 @@ if [ "$offline_result" -ne 0 ]; then
     -Pandroid.enableShrinkResourcesInReleaseBuilds=true
 fi
 
-source_apk="$android_dir/app/build/outputs/apk/release/app-release.apk"
+source_apk="$release_output_dir/app-release.apk"
 output_dir="$project_root/artifacts"
 output_apk="$output_dir/qingzhi-fatlosshelper-arm64-v$app_version.apk"
 if [ ! -f "$source_apk" ]; then
