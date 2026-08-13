@@ -4,7 +4,7 @@ import { ReminderSettings } from '../types';
 
 // Android keeps a channel's user-visible importance/sound policy after it is
 // first created. A new id lets upgraded installs receive the audible policy.
-export const REMINDER_CHANNEL_ID = 'healthy-reminders-v3';
+export const REMINDER_CHANNEL_ID = 'healthy-reminders-v4';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -30,6 +30,7 @@ async function ensureReminderChannel() {
       name: '饮食与运动提醒（重要）',
       description: '餐前、运动和测试提醒；需要声音与振动',
       importance: Notifications.AndroidImportance.MAX,
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
       sound: 'default',
       audioAttributes: {
         usage: Notifications.AndroidAudioUsage.ALARM,
@@ -37,7 +38,9 @@ async function ensureReminderChannel() {
       },
       enableVibrate: true,
       vibrationPattern: [0, 300, 180, 300],
+      enableLights: true,
       lightColor: '#2F7D5A',
+      showBadge: true,
     });
   }
 }
@@ -122,7 +125,8 @@ export async function scheduleReminders(settings: ReminderSettings) {
     }
   }
 
-  const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+  const scheduled = (await Notifications.getAllScheduledNotificationsAsync())
+    .filter(item => item.content.data?.kind !== 'test');
   const expected = activeMeals.length + (hasExerciseReminder ? settings.exerciseDays.length : 0);
   if (scheduled.length !== expected) {
     throw new Error(`系统仅成功安排 ${scheduled.length}/${expected} 条提醒，请检查通知和“闹钟与提醒”权限`);
@@ -170,6 +174,7 @@ export interface ReminderDiagnostics {
   channelEnabled: boolean;
   soundEnabled: boolean;
   vibrationEnabled: boolean;
+  lockscreenVisible: boolean;
 }
 
 export async function getReminderDiagnostics(): Promise<ReminderDiagnostics> {
@@ -185,6 +190,7 @@ export async function getReminderDiagnostics(): Promise<ReminderDiagnostics> {
       channelEnabled: true,
       soundEnabled: true,
       vibrationEnabled: true,
+      lockscreenVisible: true,
     };
   }
   await ensureReminderChannel();
@@ -195,6 +201,7 @@ export async function getReminderDiagnostics(): Promise<ReminderDiagnostics> {
     channelEnabled: Boolean(channel && channel.importance >= Notifications.AndroidImportance.HIGH),
     soundEnabled: Boolean(channel?.sound),
     vibrationEnabled: Boolean(channel?.enableVibrate),
+    lockscreenVisible: channel?.lockscreenVisibility !== Notifications.AndroidNotificationVisibility.SECRET,
   };
 }
 

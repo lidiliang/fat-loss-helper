@@ -236,7 +236,7 @@ function ReminderEditor({ settings }: { settings: ReminderSettings }) {
     try {
       await sendTestReminder();
       await refreshDiagnostics();
-      Alert.alert('测试通知已安排', '请关闭提示后返回桌面并锁屏，约 10 秒后应出现声音和振动。这次测试走的就是 App 退出后使用的安卓系统定时通道。');
+      Alert.alert('锁屏测试已安排', '请关闭提示后立即锁屏，约 10 秒后应在锁屏页显示通知并发出声音和振动。是否自动点亮屏幕还取决于手机系统的“锁屏通知亮屏”开关。');
     } catch (error) {
       Alert.alert('测试通知失败', error instanceof Error ? error.message : '请检查系统通知权限');
     } finally { setTesting(false); }
@@ -267,7 +267,7 @@ function ReminderEditor({ settings }: { settings: ReminderSettings }) {
   };
   const diagnosticText = !diagnostics
     ? '正在读取安卓提醒状态…'
-    : `通知权限${diagnostics.permissionGranted ? '已开启' : '未开启'} · 系统已安排 ${diagnostics.scheduledCount} 条 · 声音${diagnostics.soundEnabled ? '已开启' : '未开启'} · 振动${diagnostics.vibrationEnabled ? '已开启' : '未开启'}`;
+    : `通知权限${diagnostics.permissionGranted ? '已开启' : '未开启'} · 系统已安排 ${diagnostics.scheduledCount} 条 · 通道${diagnostics.lockscreenVisible ? '允许锁屏显示' : '已隐藏锁屏内容'} · 声音${diagnostics.soundEnabled ? '已开启' : '未开启'} · 振动${diagnostics.vibrationEnabled ? '已开启' : '未开启'}`;
   return (
     <Card style={{ gap: 15 }}>
       <View style={styles.settingRow}>
@@ -288,11 +288,11 @@ function ReminderEditor({ settings }: { settings: ReminderSettings }) {
       <PrimaryButton label="保存提醒设置" onPress={save} loading={saving} />
       <View style={[styles.infoBox, { backgroundColor: colors.surfaceMuted, gap: 8 }]}>
         <Text style={[styles.settingTitle, { color: colors.text }]}>关于后台运行</Text>
-        <AppText muted style={{ fontSize: 10, lineHeight: 16 }}>提醒由安卓系统闹钟调度，不要求应用常驻内存。保存后请确认下方“系统已安排”不是 0；新安卓还需允许“闹钟与提醒”。部分品牌手机需将电池策略设为“不受限制”并允许自启动。</AppText>
+        <AppText muted style={{ fontSize: 10, lineHeight: 16 }}>提醒由安卓系统闹钟调度，不要求应用常驻内存。已配置为锁屏公开显示；若锁屏时仍不显示或不亮屏，请在通知类别中允许锁屏通知，并在手机系统中开启“锁屏通知亮屏”。新安卓还需允许“闹钟与提醒”，部分品牌需允许自启动。</AppText>
         <Text style={{ color: diagnostics?.permissionGranted && diagnostics.channelEnabled ? colors.primary : colors.orange, fontSize: 10, lineHeight: 16, fontWeight: '800' }}>{diagnosticText}</Text>
         <View style={styles.buttonRow}>
-          <View style={{ flex: 1 }}><PrimaryButton label="发送测试通知" onPress={testReminder} loading={testing} compact /></View>
-          <View style={{ flex: 1 }}><PrimaryButton label="声音与振动设置" onPress={openNotificationChannelSettings} secondary compact /></View>
+          <View style={{ flex: 1 }}><PrimaryButton label="测试锁屏通知" onPress={testReminder} loading={testing} compact /></View>
+          <View style={{ flex: 1 }}><PrimaryButton label="锁屏/声音设置" onPress={openNotificationChannelSettings} secondary compact /></View>
         </View>
         <View style={styles.buttonRow}>
           <View style={{ flex: 1 }}><PrimaryButton label="允许精确定时" onPress={openAlarmSettings} secondary compact /></View>
