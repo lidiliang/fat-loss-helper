@@ -70,6 +70,18 @@ if [ -d "$android_build_dir" ]; then
     find "$android_build_dir" -type f -name '* [0-9].*' -delete
   fi
 fi
+# Native dependency outputs live below node_modules/*/android/build and .cxx.
+# iCloud conflict copies there can otherwise be treated as real .so files and
+# silently inflate the APK (for example, "libexpo-modules-core 2.so").
+dependency_conflict_count=$(find "$mobile_dir/node_modules" -type f \
+  \( -path '*/android/build/*' -o -path '*/android/.cxx/*' \) \
+  -name '* [0-9].*' | wc -l | tr -d ' ')
+if [ "$dependency_conflict_count" -gt 0 ]; then
+  printf '%s\n' "清理 $dependency_conflict_count 个依赖构建冲突副本..."
+  find "$mobile_dir/node_modules" -type f \
+    \( -path '*/android/build/*' -o -path '*/android/.cxx/*' \) \
+    -name '* [0-9].*' -delete
+fi
 release_output_dir="$android_dir/app/build/outputs/apk/release"
 if [ -d "$release_output_dir" ]; then
   find "$release_output_dir" -maxdepth 1 -type f -name 'app-release.apk' -print -delete

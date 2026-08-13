@@ -117,6 +117,8 @@ export async function initDatabase() {
     CREATE TABLE IF NOT EXISTS reminder_settings (
       owner_id TEXT PRIMARY KEY NOT NULL,
       enabled INTEGER NOT NULL,
+      meal_advance_min INTEGER NOT NULL DEFAULT 30,
+      exercise_advance_min INTEGER NOT NULL DEFAULT 60,
       breakfast TEXT NOT NULL,
       lunch TEXT NOT NULL,
       dinner TEXT NOT NULL,
@@ -152,6 +154,13 @@ export async function initDatabase() {
   const profileColumns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(profiles)');
   if (!profileColumns.some(column => column.name === 'fatty_liver_level')) {
     await db.execAsync("ALTER TABLE profiles ADD COLUMN fatty_liver_level TEXT NOT NULL DEFAULT 'none'");
+  }
+  const reminderColumns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(reminder_settings)');
+  if (!reminderColumns.some(column => column.name === 'meal_advance_min')) {
+    await db.execAsync('ALTER TABLE reminder_settings ADD COLUMN meal_advance_min INTEGER NOT NULL DEFAULT 30');
+  }
+  if (!reminderColumns.some(column => column.name === 'exercise_advance_min')) {
+    await db.execAsync('ALTER TABLE reminder_settings ADD COLUMN exercise_advance_min INTEGER NOT NULL DEFAULT 60');
   }
 }
 
@@ -496,8 +505,11 @@ export async function getReminders(ownerId: string): Promise<ReminderSettings> {
   const row = await db.getFirstAsync<{
     ownerId: string; enabled: number; breakfast: string; lunch: string; dinner: string;
     snack: string; exercise: string; exerciseDaysJson: string; updatedAt: string;
+    mealAdvanceMin: number; exerciseAdvanceMin: number;
   }>(
-    `SELECT owner_id AS ownerId, enabled, breakfast, lunch, dinner, snack, exercise,
+    `SELECT owner_id AS ownerId, enabled,
+      meal_advance_min AS mealAdvanceMin, exercise_advance_min AS exerciseAdvanceMin,
+      breakfast, lunch, dinner, snack, exercise,
       exercise_days_json AS exerciseDaysJson, updated_at AS updatedAt
      FROM reminder_settings WHERE owner_id = ?`,
     ownerId,
@@ -508,6 +520,8 @@ export async function getReminders(ownerId: string): Promise<ReminderSettings> {
   const defaults: ReminderSettings = {
     ownerId,
     enabled: true,
+    mealAdvanceMin: 30,
+    exerciseAdvanceMin: 60,
     breakfast: '07:30',
     lunch: '12:00',
     dinner: '18:30',
@@ -522,12 +536,19 @@ export async function getReminders(ownerId: string): Promise<ReminderSettings> {
 
 export async function saveReminders(settings: ReminderSettings) {
   const db = await databasePromise;
+  const mealAdvanceMin = Number.isFinite(settings.mealAdvanceMin)
+    ? Math.min(240, Math.max(0, Math.round(settings.mealAdvanceMin))) : 30;
+  const exerciseAdvanceMin = Number.isFinite(settings.exerciseAdvanceMin)
+    ? Math.min(240, Math.max(0, Math.round(settings.exerciseAdvanceMin))) : 60;
   await db.runAsync(
     `INSERT OR REPLACE INTO reminder_settings
-     (owner_id, enabled, breakfast, lunch, dinner, snack, exercise, exercise_days_json, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     (owner_id, enabled, meal_advance_min, exercise_advance_min,
+      breakfast, lunch, dinner, snack, exercise, exercise_days_json, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     settings.ownerId,
     settings.enabled ? 1 : 0,
+    mealAdvanceMin,
+    exerciseAdvanceMin,
     settings.breakfast,
     settings.lunch,
     settings.dinner,

@@ -24,6 +24,10 @@ function parseTime(value: string, minutesBefore = 0) {
   return { hour: Math.floor(total / 60), minute: total % 60 };
 }
 
+function normalizeAdvanceMinutes(value: number | undefined, fallback: number) {
+  return Number.isFinite(value) ? Math.min(240, Math.max(0, Math.round(value!))) : fallback;
+}
+
 async function ensureReminderChannel() {
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync(REMINDER_CHANNEL_ID, {
@@ -79,7 +83,7 @@ export async function scheduleReminders(settings: ReminderSettings) {
   }
 
   const meals: Array<{ key: keyof ReminderSettings; title: string; body: string }> = [
-    { key: 'breakfast', title: '早餐前的小准备 🌿', body: '还有 30 分钟到早餐，记得按计划选择并记录食物。' },
+    { key: 'breakfast', title: '早餐前的小准备 🌿', body: '记得按计划选择并记录食物。' },
     { key: 'lunch', title: '午餐时间快到了', body: '先看看今日剩余额度，食堂选餐会更从容。' },
     { key: 'dinner', title: '晚餐前看一眼预算', body: '根据今天的摄入，给晚餐留出合适空间。' },
     { key: 'snack', title: '加餐前先确认', body: '是真饿还是嘴馋？记录后再做决定也不迟。' },
@@ -95,24 +99,30 @@ export async function scheduleReminders(settings: ReminderSettings) {
   const allowed = await requestNotificationPermission();
   if (!allowed) throw new Error('通知权限未开启，请在系统设置中允许通知');
   await Notifications.cancelAllScheduledNotificationsAsync();
+  const mealAdvanceMin = normalizeAdvanceMinutes(settings.mealAdvanceMin, 30);
+  const exerciseAdvanceMin = normalizeAdvanceMinutes(settings.exerciseAdvanceMin, 60);
 
   for (const meal of activeMeals) {
-    const time = parseTime(String(settings[meal.key]).trim(), 30);
+    const time = parseTime(String(settings[meal.key]).trim(), mealAdvanceMin);
     await Notifications.scheduleNotificationAsync({
-      content: reminderContent(meal.title, meal.body, { screen: 'record' }),
+      content: reminderContent(
+        meal.title,
+        mealAdvanceMin ? `还有 ${mealAdvanceMin} 分钟，${meal.body}` : meal.body,
+        { screen: 'record' },
+      ),
       trigger: { type: Notifications.SchedulableTriggerInputTypes.DAILY, ...time, channelId: REMINDER_CHANNEL_ID },
     });
   }
 
   if (hasExerciseReminder) {
-    const exerciseTime = parseTime(exercise, 60);
+    const exerciseTime = parseTime(exercise, exerciseAdvanceMin);
     for (const day of settings.exerciseDays) {
       // Expo/Android 周日为 1，因此将业务层周日 0 转成 1。
       const weekday = day === 0 ? 1 : day + 1;
       await Notifications.scheduleNotificationAsync({
         content: reminderContent(
           '今天有运动计划 💪',
-          `计划 ${exercise} 开始运动，提前补水并准备好装备。`,
+          `${exerciseAdvanceMin ? `距离计划运动还有 ${exerciseAdvanceMin} 分钟，` : ''}提前补水并准备好装备。`,
           { screen: 'record', kind: 'exercise' },
         ),
         trigger: {

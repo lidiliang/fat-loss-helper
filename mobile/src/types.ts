@@ -111,6 +111,8 @@ export interface MealTemplate {
 export interface ReminderSettings {
   ownerId: string;
   enabled: boolean;
+  mealAdvanceMin: number;
+  exerciseAdvanceMin: number;
   breakfast: string;
   lunch: string;
   dinner: string;

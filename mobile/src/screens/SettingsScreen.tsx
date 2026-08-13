@@ -194,11 +194,16 @@ function ReminderEditor({ settings }: { settings: ReminderSettings }) {
   const colors = useColors();
   const app = useApp();
   const [draft, setDraft] = useState(settings);
+  const [mealAdvanceText, setMealAdvanceText] = useState(String(settings.mealAdvanceMin ?? 30));
+  const [exerciseAdvanceText, setExerciseAdvanceText] = useState(String(settings.exerciseAdvanceMin ?? 60));
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [diagnostics, setDiagnostics] = useState<ReminderDiagnostics | null>(null);
   const refreshDiagnostics = () => getReminderDiagnostics().then(setDiagnostics).catch(() => undefined);
   useEffect(() => {
+    setDraft(settings);
+    setMealAdvanceText(String(settings.mealAdvanceMin ?? 30));
+    setExerciseAdvanceText(String(settings.exerciseAdvanceMin ?? 60));
     void refreshDiagnostics();
   }, [settings.updatedAt]);
   const days = [{ v: 1, l: '一' }, { v: 2, l: '二' }, { v: 3, l: '三' }, { v: 4, l: '四' }, { v: 5, l: '五' }, { v: 6, l: '六' }, { v: 0, l: '日' }];
@@ -212,10 +217,17 @@ function ReminderEditor({ settings }: { settings: ReminderSettings }) {
     ];
     const invalid = timeFields.find(item => item.value && !/^([01]\d|2[0-3]):[0-5]\d$/.test(item.value));
     if (invalid) return Alert.alert(`${invalid.label}时间格式不正确`, '请使用 07:30 这样的 24 小时格式，或留空关闭该项提醒。');
+    const mealAdvanceMin = Number(mealAdvanceText);
+    const exerciseAdvanceMin = Number(exerciseAdvanceText);
+    if (![mealAdvanceMin, exerciseAdvanceMin].every(value => Number.isInteger(value) && value >= 0 && value <= 240)) {
+      return Alert.alert('提前提醒时间不正确', '请填写 0–240 之间的整数；填写 0 表示到点提醒。');
+    }
     setSaving(true);
     try {
       const next = {
         ...draft,
+        mealAdvanceMin,
+        exerciseAdvanceMin,
         breakfast: draft.breakfast.trim(),
         lunch: draft.lunch.trim(),
         dinner: draft.dinner.trim(),
@@ -272,12 +284,23 @@ function ReminderEditor({ settings }: { settings: ReminderSettings }) {
     <Card style={{ gap: 15 }}>
       <View style={styles.settingRow}>
         <View style={[styles.settingIcon, { backgroundColor: colors.primarySoft }]}><Ionicons name="notifications-outline" size={20} color={colors.primary} /></View>
-        <View style={{ flex: 1 }}><Text style={[styles.settingTitle, { color: colors.text }]}>启用饮食与运动提醒</Text><Text style={[styles.settingDetail, { color: colors.textMuted }]}>餐前 30 分钟，运动前 1 小时</Text></View>
+        <View style={{ flex: 1 }}><Text style={[styles.settingTitle, { color: colors.text }]}>启用饮食与运动提醒</Text><Text style={[styles.settingDetail, { color: colors.textMuted }]}>餐前和运动提前量均可自定义</Text></View>
         <Switch value={draft.enabled} onValueChange={enabled => setDraft({ ...draft, enabled })} trackColor={{ false: colors.border, true: colors.primarySoft }} thumbColor={draft.enabled ? colors.primary : colors.textMuted} />
       </View>
       {draft.enabled ? (
         <>
           <AppText muted style={{ fontSize: 11, lineHeight: 17 }}>只填写需要的提醒时间；任一项留空即关闭该项提醒。</AppText>
+          <View style={styles.buttonRow}>
+            <Field label="餐前提前" value={mealAdvanceText} onChangeText={setMealAdvanceText} keyboardType="number-pad" suffix="分钟" />
+            <Field label="运动提前" value={exerciseAdvanceText} onChangeText={setExerciseAdvanceText} keyboardType="number-pad" suffix="分钟" />
+          </View>
+          <AppText muted style={{ fontSize: 10, lineHeight: 16 }}>支持 0–240 分钟，0 表示到点提醒。快捷选择：</AppText>
+          <View style={styles.chipRow}>
+            {[0, 15, 30, 60].map(value => <Chip key={`meal-${value}`} label={`餐前 ${value}分`} small selected={mealAdvanceText === String(value)} onPress={() => setMealAdvanceText(String(value))} />)}
+          </View>
+          <View style={styles.chipRow}>
+            {[0, 15, 30, 60].map(value => <Chip key={`exercise-${value}`} label={`运动 ${value}分`} small selected={exerciseAdvanceText === String(value)} onPress={() => setExerciseAdvanceText(String(value))} />)}
+          </View>
           <View style={styles.buttonRow}><Field label="早餐（可选）" value={draft.breakfast} placeholder="留空则不提醒" onChangeText={breakfast => setDraft({ ...draft, breakfast })} keyboardType="numbers-and-punctuation" /><Field label="午餐（可选）" value={draft.lunch} placeholder="留空则不提醒" onChangeText={lunch => setDraft({ ...draft, lunch })} keyboardType="numbers-and-punctuation" /></View>
           <View style={styles.buttonRow}><Field label="晚餐（可选）" value={draft.dinner} placeholder="留空则不提醒" onChangeText={dinner => setDraft({ ...draft, dinner })} keyboardType="numbers-and-punctuation" /><Field label="加餐（可选）" value={draft.snack} placeholder="留空则不提醒" onChangeText={snack => setDraft({ ...draft, snack })} keyboardType="numbers-and-punctuation" /></View>
           <Field label="运动计划时间（可选）" value={draft.exercise} placeholder="留空则不提醒" onChangeText={exercise => setDraft({ ...draft, exercise })} keyboardType="numbers-and-punctuation" />
