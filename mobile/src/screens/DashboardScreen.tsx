@@ -4,13 +4,13 @@ import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 import { Card, Field, Header, PrimaryButton, ProgressBar, Screen, SectionTitle } from '../components/ui';
 import { MarkdownText } from '../components/MarkdownText';
 import { CONVENIENT_FAT_LOSS_FOODS, FATTY_LIVER_LEVELS, MEAL_LABELS } from '../data/seed';
-import { calculateGoals, dateKey, getMealRecommendation, getSaturatedFatLimit } from '../lib/calculations';
+import { calculateGoals, dateKey, getMealRecommendation, getSaturatedFatLimit, summarizeDay } from '../lib/calculations';
 import { buildMiniMealRecommendations, MiniMealRecommendation } from '../lib/mealRecommendations';
-import { askNutritionAI, generateDailyAISummary, getDailyAISummary } from '../lib/api';
+import { askNutritionAI, generateDailyAIPlan, generateDailyAISummary, getAIHistory, getDailyAISummary } from '../lib/api';
 import { buildAIDailyContext } from '../lib/ai';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
-import { AISummaryRecord, MealType, RootTab } from '../types';
+import { AIDailyContext, AIHistoryItem, AISummaryRecord, MealType, RootTab } from '../types';
 import { useColors } from '../theme';
 
 export function DashboardScreen({ onNavigate }: { onNavigate: (tab: RootTab) => void }) {
@@ -108,6 +108,8 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (tab: RootTab) => 
         <MacroCard label="碳水" value={summary.carb} goal={profile.carbGoal} unit="g" color={colors.blue} energyShare={macroShares.carb} />
         <MacroCard label="脂肪" value={summary.fat} goal={profile.fatGoal} unit="g" color={colors.orange} energyShare={macroShares.fat} />
       </View>
+
+      {isToday ? <DailyPlanCard /> : null}
 
       {isToday && summary.calories > 0 && summary.carb < profile.carbGoal * 0.65 ? (
         <View style={[styles.carbHint, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -262,6 +264,11 @@ function AIAssistantCard() {
   const [answer, setAnswer] = useState('');
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [asking, setAsking] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyType, setHistoryType] = useState<'all' | 'daily_summary' | 'question'>('all');
+  const [history, setHistory] = useState<AIHistoryItem[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [expandedHistoryId, setExpandedHistoryId] = useState('');
   const context = useMemo(() => app.profile ? buildAIDailyContext({
     date: app.selectedDate,
     profile: app.profile,
@@ -291,6 +298,7 @@ function AIAssistantCard() {
       const result = await generateDailyAISummary(token, context, Boolean(summaryRecord));
       setSummaryRecord(result.summary);
       setRemaining(result.remaining);
+      if (historyOpen) void loadHistory();
     } catch (error) {
       Alert.alert('无法生成总结', error instanceof Error ? error.message : '请稍后重试');
     } finally {
@@ -305,11 +313,37 @@ function AIAssistantCard() {
       const result = await askNutritionAI(token, question.trim(), context);
       setAnswer(result.answer);
       setRemaining(result.remaining);
+      if (historyOpen) void loadHistory();
     } catch (error) {
       Alert.alert('暂时无法回答', error instanceof Error ? error.message : '请稍后重试');
     } finally {
       setAsking(false);
     }
+  };
+
+  const loadHistory = async (type = historyType) => {
+    if (!token) return;
+    setHistoryLoading(true);
+    try {
+      const result = await getAIHistory(token, type);
+      setHistory(result.items);
+    } catch (error) {
+      Alert.alert('无法读取历史对话', error instanceof Error ? error.message : '请稍后重试');
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const toggleHistory = () => {
+    const next = !historyOpen;
+    setHistoryOpen(next);
+    if (next && !history.length) void loadHistory();
+  };
+
+  const changeHistoryType = (type: 'all' | 'daily_summary' | 'question') => {
+    setHistoryType(type);
+    setExpandedHistoryId('');
+    void loadHistory(type);
   };
 
   const isLatest = Boolean(summaryRecord && context && summaryRecord.contextVersion === context.version);
@@ -341,7 +375,96 @@ function AIAssistantCard() {
       <Field label="你的问题" value={question} onChangeText={setQuestion} placeholder="例如：今晚还能喝一杯脱脂牛奶吗？" multiline />
       <PrimaryButton label="发送给 DeepSeek" onPress={ask} loading={asking} disabled={!question.trim()} />
       {answer ? <View style={[styles.aiAnswer, { backgroundColor: colors.primarySoft }]}><MarkdownText value={answer} /></View> : null}
+      <View style={[styles.miniDivider, { backgroundColor: colors.border }]} />
+      <Pressable onPress={toggleHistory} style={styles.historyToggle}>
+        <View>
+          <Text style={[styles.aiQuestionTitle, { color: colors.text }]}>历史对话</Text>
+          <Text style={[styles.aiMeta, { color: colors.textMuted }]}>查看已保存的每日总结与营养问答</Text>
+        </View>
+        <Ionicons name={historyOpen ? 'chevron-up' : 'chevron-down'} size={19} color={colors.textMuted} />
+      </Pressable>
+      {historyOpen ? (
+        <View style={styles.historyArea}>
+          <View style={styles.aiExamples}>
+            {([['all', '全部'], ['daily_summary', '每日总结'], ['question', '问答']] as const).map(([value, label]) => (
+              <Pressable key={value} onPress={() => changeHistoryType(value)} style={[styles.historyFilter, { borderColor: historyType === value ? colors.primary : colors.border, backgroundColor: historyType === value ? colors.primarySoft : colors.surfaceMuted }]}>
+                <Text style={{ color: historyType === value ? colors.primaryDark : colors.textMuted, fontSize: 10, fontWeight: '800' }}>{label}</Text>
+              </Pressable>
+            ))}
+          </View>
+          {historyLoading ? <Text style={[styles.aiHint, { color: colors.textMuted }]}>正在加载历史…</Text> : history.length ? history.map(item => {
+            const expanded = expandedHistoryId === item.id;
+            return (
+              <Pressable key={item.id} onPress={() => setExpandedHistoryId(expanded ? '' : item.id)} style={[styles.historyItem, { borderColor: colors.border, backgroundColor: colors.surfaceMuted }]}>
+                <View style={styles.historyItemHeader}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.historyKind, { color: colors.primaryDark }]}>{item.interactionType === 'daily_summary' ? '每日总结' : '营养问答'} · {item.dayKey || item.createdAt.slice(0, 10)}</Text>
+                    <Text numberOfLines={expanded ? undefined : 2} style={[styles.historyPreview, { color: colors.text }]}>{item.question || item.responseText}</Text>
+                  </View>
+                  <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textMuted} />
+                </View>
+                {expanded ? <View style={[styles.historyAnswer, { borderTopColor: colors.border }]}>{item.question ? <Text style={[styles.historyQuestion, { color: colors.text }]}>问题：{item.question}</Text> : null}<MarkdownText value={item.responseText} /></View> : null}
+              </Pressable>
+            );
+          }) : <Text style={[styles.aiHint, { color: colors.textMuted }]}>还没有这一类历史记录。</Text>}
+        </View>
+      ) : null}
       <Text style={[styles.aiDisclaimer, { color: colors.textMuted }]}>AI 建议仅供饮食记录与生活方式参考，不替代医生诊断；重度脂肪肝、血糖异常或明显不适请及时就医。</Text>
+    </Card>
+  );
+}
+
+function DailyPlanCard() {
+  const colors = useColors();
+  const { token } = useAuth();
+  const app = useApp();
+  const [plan, setPlan] = useState<AISummaryRecord | null>(null);
+  const [contexts, setContexts] = useState<AIDailyContext[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [insufficient, setInsufficient] = useState(false);
+
+  const loadOrGenerate = async (force = false) => {
+    if (!token || !app.profile) return;
+    setLoading(true);
+    try {
+      const days = [-2, -1].map(offset => {
+        const value = new Date(`${dateKey()}T12:00:00`);
+        value.setDate(value.getDate() + offset);
+        return dateKey(value);
+      });
+      const records = await Promise.all(days.map(day => app.getDayRecords(day)));
+      const nextContexts = records.map((record, index) => buildAIDailyContext({
+        date: days[index], profile: app.profile!, summary: summarizeDay(record.meals, record.exercises), meals: record.meals, exercises: record.exercises,
+      }));
+      setContexts(nextContexts);
+      const hasRecords = records.some(record => record.meals.length || record.exercises.length);
+      setInsufficient(!hasRecords);
+      if (!hasRecords) return;
+      const result = await generateDailyAIPlan(token, dateKey(), nextContexts, force);
+      setPlan(result.plan);
+    } catch (error) {
+      if (force) Alert.alert('无法生成今日方案', error instanceof Error ? error.message : '请稍后重试');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadOrGenerate(false);
+  }, [token, app.profile?.updatedAt]);
+
+  return (
+    <Card style={[styles.dailyPlanCard, { backgroundColor: colors.surface }]}>
+      <View style={styles.aiHeader}>
+        <View style={[styles.recommendIcon, { backgroundColor: colors.primarySoft }]}><Ionicons name="calendar-outline" size={18} color={colors.primary} /></View>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.aiTitle, { color: colors.text }]}>今日控制方案</Text>
+          <Text style={[styles.aiMeta, { color: colors.textMuted }]}>根据昨天与前天的饮食、运动记录生成 · 每日自动一次</Text>
+        </View>
+      </View>
+      {loading && !plan ? <Text style={[styles.aiHint, { color: colors.textMuted }]}>正在分析前两天的记录…</Text> : plan ? <View style={[styles.aiAnswer, { backgroundColor: colors.primarySoft }]}><MarkdownText value={plan.responseText} /></View> : <Text style={[styles.aiHint, { color: colors.textMuted }]}>{insufficient ? '前两天记录不足，先完成今天的真实记录；有历史数据后会自动生成方案。' : '暂时无法读取今日方案，可稍后手动重试。'}</Text>}
+      {!insufficient ? <PrimaryButton label={plan ? '根据最新记录重新生成' : '生成今日方案'} onPress={() => loadOrGenerate(Boolean(plan))} loading={loading} secondary /> : null}
+      {contexts.length ? <Text style={[styles.aiDisclaimer, { color: colors.textMuted }]}>数据范围：{contexts[0].date} 至 {contexts[contexts.length - 1].date}</Text> : null}
     </Card>
   );
 }
@@ -426,6 +549,16 @@ const styles = StyleSheet.create({
   aiExample: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 7 },
   aiExampleText: { fontSize: 9.5 },
   aiDisclaimer: { fontSize: 9.5, lineHeight: 15 },
+  dailyPlanCard: { gap: 12, borderWidth: 1 },
+  historyToggle: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  historyArea: { gap: 9 },
+  historyFilter: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 11, paddingVertical: 7 },
+  historyItem: { borderWidth: 1, borderRadius: 14, padding: 11 },
+  historyItemHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  historyKind: { fontSize: 9.5, fontWeight: '900', marginBottom: 4 },
+  historyPreview: { fontSize: 11, lineHeight: 17 },
+  historyAnswer: { borderTopWidth: StyleSheet.hairlineWidth, marginTop: 10, paddingTop: 10 },
+  historyQuestion: { fontSize: 11, lineHeight: 17, fontWeight: '800', marginBottom: 7 },
   noRecords: { padding: 30, alignItems: 'center', gap: 6 },
   noRecordTitle: { fontSize: 15, fontWeight: '800' },
   noRecordDetail: { fontSize: 12, textAlign: 'center' },

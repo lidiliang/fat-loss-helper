@@ -31,6 +31,7 @@ export function RecordScreen() {
   const [selectedFood, setSelectedFood] = useState<FoodItem | null>(null);
   const [saving, setSaving] = useState(false);
   const [customFoodOpen, setCustomFoodOpen] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState<MealTemplate | null>(null);
   const [foodsExpanded, setFoodsExpanded] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
   const historyY = useRef(0);
@@ -133,11 +134,14 @@ export function RecordScreen() {
             {app.templates.map(template => (
               <Card key={template.id} style={styles.templateCard}>
                 <View style={[styles.templateIcon, { backgroundColor: colors.primarySoft }]}><Text style={{ fontSize: 20 }}>🥗</Text></View>
-                <View style={{ flex: 1 }}>
+                <Pressable onPress={() => setEditingTemplate(template)} style={{ flex: 1 }} accessibilityLabel={`查看或编辑${template.name}`}>
                   <Text style={[styles.templateName, { color: colors.text }]}>{template.name}</Text>
                   <Text numberOfLines={1} style={[styles.templateDescription, { color: colors.textMuted }]}>{template.description}</Text>
-                </View>
+                </Pressable>
                 <View style={styles.templateActions}>
+                  <Pressable onPress={() => setEditingTemplate(template)} hitSlop={6} style={styles.templateDelete}>
+                    <Ionicons name="create-outline" size={17} color={colors.primary} />
+                  </Pressable>
                   <Pressable onPress={() => confirmDeleteTemplate(template)} hitSlop={6} style={styles.templateDelete}>
                     <Ionicons name="trash-outline" size={16} color={colors.textMuted} />
                   </Pressable>
@@ -199,7 +203,96 @@ export function RecordScreen() {
 
       <FoodWeightModal food={selectedFood} onClose={() => setSelectedFood(null)} onSave={saveSelectedFood} onUpdateServing={updateSelectedServing} saving={saving} mealType={mealType} />
       <CustomFoodModal visible={customFoodOpen} onClose={() => setCustomFoodOpen(false)} />
+      <TemplateEditorModal template={editingTemplate} onClose={() => setEditingTemplate(null)} />
     </Screen>
+  );
+}
+
+function TemplateEditorModal({ template, onClose }: { template: MealTemplate | null; onClose: () => void }) {
+  const colors = useColors();
+  const app = useApp();
+  const [name, setName] = useState('');
+  const [items, setItems] = useState<MealTemplate['items']>([]);
+  const [query, setQuery] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!template) return;
+    setName(template.name);
+    setItems(Array.from(template.items.reduce((combined, item) => {
+      combined.set(item.foodId, (combined.get(item.foodId) ?? 0) + item.weightG);
+      return combined;
+    }, new Map<string, number>())).map(([foodId, weightG]) => ({ foodId, weightG })));
+    setQuery('');
+  }, [template]);
+
+  if (!template) return null;
+  const availableFoods = app.foods.filter(food => (
+    !items.some(item => item.foodId === food.id)
+    && (!query.trim() || food.name.toLowerCase().includes(query.trim().toLowerCase()))
+  )).slice(0, 6);
+  const updateAmount = (foodId: string, value: string) => {
+    const amount = Number(value.replace(/[^0-9.]/g, ''));
+    setItems(current => current.map(item => item.foodId === foodId ? { ...item, weightG: amount } : item));
+  };
+  const save = async () => {
+    if (!name.trim()) return Alert.alert('请填写组合名称');
+    if (!items.length || items.some(item => !Number.isFinite(item.weightG) || item.weightG <= 0)) return Alert.alert('请保留至少一种食物，并填写正确份量');
+    setSaving(true);
+    try {
+      await app.saveTemplateChanges(template, name, items);
+      onClose();
+      Alert.alert(template.builtIn ? '已保存为我的组合' : '组合已更新', template.builtIn ? '内置组合保持不变，新组合可以继续编辑和复用。' : '下次添加时会使用新的食物与份量。');
+    } catch (error) {
+      Alert.alert('保存失败', error instanceof Error ? error.message : '请稍后重试');
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable style={styles.modalBackdrop} onPress={onClose} />
+      <ScrollView style={[styles.sheet, { backgroundColor: colors.surface }]} contentContainerStyle={styles.sheetScroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        <View style={[styles.handle, { backgroundColor: colors.border }]} />
+        <Text style={[styles.sheetTitle, { color: colors.text }]}>{template.builtIn ? '查看内置组合' : '编辑常用组合'}</Text>
+        <Text style={[styles.sheetSubtitle, { color: colors.textMuted }]}>{template.builtIn ? '调整后会另存为你的组合，不会改变系统示例。' : '可改名称、份量，或增删食物；既往记录不会变化。'}</Text>
+        <Field label="组合名称" value={name} onChangeText={setName} placeholder="例如：我的简易早餐" />
+        <Text style={[styles.customUnitTitle, { color: colors.text }]}>组合内容</Text>
+        <View style={[styles.templateEditorList, { borderColor: colors.border }]}>
+          {items.map(item => {
+            const food = app.foods.find(candidate => candidate.id === item.foodId);
+            if (!food) return null;
+            const unit = food.nutritionUnit === 'ml' ? 'mL' : 'g';
+            return (
+              <View key={item.foodId} style={[styles.templateEditorRow, { borderBottomColor: colors.border }]}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.foodName, { color: colors.text }]}>{food.name}</Text>
+                  <Text style={[styles.foodNutrition, { color: colors.textMuted }]}>约 {Math.round(food.calories * item.weightG / 100)} kcal</Text>
+                </View>
+                <View style={[styles.templateAmountWrap, { borderColor: colors.border, backgroundColor: colors.surfaceMuted }]}>
+                  <Field value={String(item.weightG || '')} onChangeText={value => updateAmount(item.foodId, value)} keyboardType="decimal-pad" suffix={unit} />
+                </View>
+                <Pressable onPress={() => setItems(current => current.filter(candidate => candidate.foodId !== item.foodId))} hitSlop={8}>
+                  <Ionicons name="close-circle-outline" size={21} color={colors.textMuted} />
+                </Pressable>
+              </View>
+            );
+          })}
+        </View>
+        <Field label="添加食物" value={query} onChangeText={setQuery} placeholder="搜索食物名称" />
+        {query.trim() ? (
+          <View style={[styles.templateSearchResults, { borderColor: colors.border }]}>
+            {availableFoods.length ? availableFoods.map(food => (
+              <Pressable key={food.id} onPress={() => { setItems(current => [...current, { foodId: food.id, weightG: food.servings?.[0] ? servingAmount(food.servings[0]) : 100 }]); setQuery(''); }} style={[styles.templateSearchRow, { borderBottomColor: colors.border }]}>
+                <Text style={[styles.foodName, { color: colors.text }]}>{food.name}</Text>
+                <Text style={{ color: colors.primary, fontWeight: '900' }}>＋ 添加</Text>
+              </Pressable>
+            )) : <Text style={[styles.aiEstimateNotice, { color: colors.textMuted }]}>没有可添加的匹配食物。</Text>}
+          </View>
+        ) : null}
+        <PrimaryButton label={template.builtIn ? '另存为我的组合' : '保存修改'} onPress={save} loading={saving} />
+      </ScrollView>
+    </Modal>
   );
 }
 
@@ -638,4 +731,9 @@ const styles = StyleSheet.create({
   aiEstimateTitle: { fontSize: 11, fontWeight: '900' },
   aiEstimateText: { fontSize: 9.5, lineHeight: 15 },
   aiEstimateNotice: { fontSize: 9.5, lineHeight: 15, marginTop: -5 },
+  templateEditorList: { borderWidth: 1, borderRadius: 15, overflow: 'hidden' },
+  templateEditorRow: { minHeight: 68, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 9, borderBottomWidth: StyleSheet.hairlineWidth },
+  templateAmountWrap: { width: 116, borderRadius: 13, overflow: 'hidden' },
+  templateSearchResults: { borderWidth: 1, borderRadius: 15, overflow: 'hidden', paddingHorizontal: 12 },
+  templateSearchRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: StyleSheet.hairlineWidth },
 });

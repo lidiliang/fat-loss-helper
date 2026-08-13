@@ -183,6 +183,9 @@ func (s *server) routes(allowOrigin string) *gin.Engine {
 	authorized.GET("/sync/latest", s.latestSnapshot)
 	authorized.GET("/ai/daily-summary", s.latestDailySummary)
 	authorized.POST("/ai/daily-summary", s.generateDailySummary)
+	authorized.GET("/ai/daily-plan", s.latestDailyPlan)
+	authorized.POST("/ai/daily-plan", s.generateDailyPlan)
+	authorized.GET("/ai/history", s.aiHistory)
 	authorized.POST("/ai/food-estimate", s.estimateFood)
 	authorized.POST("/ai/ask", s.askNutritionAssistant)
 	return router

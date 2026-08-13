@@ -31,6 +31,21 @@ func TestAIValidationHelpers(t *testing.T) {
 	}
 }
 
+func TestDailyPlanInputValidation(t *testing.T) {
+	validContext := dailyContext{
+		Date: "2026-08-11", Version: "v1-a",
+		Profile: []byte(`{}`), Summary: []byte(`{}`), Meals: []byte(`[]`), Exercises: []byte(`[]`),
+	}
+	if !validDailyContext(validContext) {
+		t.Fatal("validDailyContext rejected a valid plan context")
+	}
+	invalid := validContext
+	invalid.Date = "2026-02-30"
+	if validDailyContext(invalid) {
+		t.Fatal("validDailyContext accepted an invalid plan date")
+	}
+}
+
 func TestAIRoutesRequireJWT(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	s := &server{jwtSecret: []byte("test-secret-that-is-long-enough")}
@@ -41,6 +56,9 @@ func TestAIRoutesRequireJWT(t *testing.T) {
 	}{
 		{http.MethodGet, "/api/v1/ai/daily-summary?date=2026-08-12"},
 		{http.MethodPost, "/api/v1/ai/daily-summary"},
+		{http.MethodGet, "/api/v1/ai/daily-plan?date=2026-08-13"},
+		{http.MethodPost, "/api/v1/ai/daily-plan"},
+		{http.MethodGet, "/api/v1/ai/history"},
 		{http.MethodPost, "/api/v1/ai/food-estimate"},
 		{http.MethodPost, "/api/v1/ai/ask"},
 	}

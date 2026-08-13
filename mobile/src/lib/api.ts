@@ -1,5 +1,5 @@
 import Constants from 'expo-constants';
-import { AIDailyContext, AIFoodEstimate, AISummaryRecord, BackupSnapshot, SessionUser } from '../types';
+import { AIDailyContext, AIFoodEstimate, AIHistoryItem, AISummaryRecord, BackupSnapshot, SessionUser } from '../types';
 
 export interface AuthResponse {
   token: string;
@@ -74,6 +74,21 @@ export function generateDailyAISummary(token: string, context: AIDailyContext, f
     method: 'POST',
     body: JSON.stringify({ context, force }),
   }, token, 60000);
+}
+
+export function getDailyAIPlan(token: string, date: string) {
+  return apiRequest<{ plan: AISummaryRecord | null; remaining: number }>(`/ai/daily-plan?date=${encodeURIComponent(date)}`, {}, token);
+}
+
+export function generateDailyAIPlan(token: string, date: string, contexts: AIDailyContext[], force = false) {
+  return apiRequest<{ plan: AISummaryRecord; cached: boolean; remaining: number }>('/ai/daily-plan', {
+    method: 'POST',
+    body: JSON.stringify({ date, contexts, force }),
+  }, token, 60000);
+}
+
+export function getAIHistory(token: string, type: 'all' | 'daily_summary' | 'question' = 'all', limit = 20) {
+  return apiRequest<{ items: AIHistoryItem[] }>(`/ai/history?type=${type}&limit=${limit}`, {}, token);
 }
 
 export function estimateFoodWithAI(token: string, name: string, description: string) {

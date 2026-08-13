@@ -75,6 +75,8 @@ interface AppValue {
   deleteCustomFood: (id: string) => Promise<void>;
   saveFoodServings: (foodId: string, servings: FoodServing[]) => Promise<void>;
   createTemplateFromMeal: (mealType: MealType, name: string) => Promise<void>;
+  saveTemplateChanges: (template: MealTemplate, name: string, items: MealTemplate['items']) => Promise<void>;
+  getDayRecords: (date: string) => Promise<{ meals: MealRecord[]; exercises: ExerciseRecord[] }>;
   saveReminders: (settings: ReminderSettings) => Promise<void>;
 }
 
@@ -283,12 +285,40 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const owner = ensureUser();
       const records = meals.filter(item => item.mealType === mealType);
       if (!records.length) throw new Error('这个餐次还没有可保存的记录');
+      const combinedItems = Array.from(records.reduce((items, item) => {
+        items.set(item.foodId, (items.get(item.foodId) ?? 0) + item.weightG);
+        return items;
+      }, new Map<string, number>())).map(([foodId, weightG]) => ({ foodId, weightG }));
       await saveTemplate({
         id: randomId('tpl'), ownerId: owner.id, name,
         description: records.map(item => item.foodName).join(' + '),
-        items: records.map(item => ({ foodId: item.foodId, weightG: item.weightG })), builtIn: false,
+        items: combinedItems, builtIn: false,
       }, owner.id);
       await refresh();
+    },
+    saveTemplateChanges: async (template, name, items) => {
+      const owner = ensureUser();
+      if (!name.trim()) throw new Error('请填写组合名称');
+      if (!items.length) throw new Error('组合至少需要保留一种食物');
+      const nextTemplate: MealTemplate = {
+        ...template,
+        id: template.builtIn ? randomId('tpl') : template.id,
+        ownerId: owner.id,
+        name: name.trim(),
+        description: items.map(item => {
+          const food = foods.find(candidate => candidate.id === item.foodId);
+          return `${food?.name ?? '未知食物'} ${item.weightG}${food?.nutritionUnit === 'ml' ? 'mL' : 'g'}`;
+        }).join(' + '),
+        items,
+        builtIn: false,
+      };
+      await saveTemplate(nextTemplate, owner.id);
+      await refresh();
+    },
+    getDayRecords: async date => {
+      const owner = ensureUser();
+      const [dayMeals, dayExercises] = await Promise.all([getMeals(owner.id, date), getExercises(owner.id, date)]);
+      return { meals: dayMeals, exercises: dayExercises };
     },
     saveReminders: async settings => {
       await saveRemindersDb(settings);

@@ -164,6 +164,15 @@ export interface AISummaryRecord {
   totalTokens: number;
 }
 
+export interface AIHistoryItem {
+  id: string;
+  interactionType: 'daily_summary' | 'question';
+  dayKey?: string;
+  question?: string;
+  responseText: string;
+  createdAt: string;
+}
+
 export interface AIFoodEstimate {
   name: string;
   nutritionUnit: FoodMeasureUnit;

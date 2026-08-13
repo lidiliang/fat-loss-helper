@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -90,6 +91,12 @@ type summaryInput struct {
 	Force   bool         `json:"force"`
 }
 
+type dailyPlanInput struct {
+	Date     string         `json:"date"`
+	Contexts []dailyContext `json:"contexts"`
+	Force    bool           `json:"force"`
+}
+
 type foodEstimateInput struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
@@ -123,6 +130,15 @@ type aiRecord struct {
 	PromptTokens     int             `json:"promptTokens"`
 	CompletionTokens int             `json:"completionTokens"`
 	TotalTokens      int             `json:"totalTokens"`
+}
+
+type aiHistoryRecord struct {
+	ID              uuid.UUID `json:"id"`
+	InteractionType string    `json:"interactionType"`
+	DayKey          string    `json:"dayKey,omitempty"`
+	Question        string    `json:"question,omitempty"`
+	ResponseText    string    `json:"responseText"`
+	CreatedAt       time.Time `json:"createdAt"`
 }
 
 func newAIClient(baseURL, apiKey, model string) *aiClient {
@@ -345,6 +361,130 @@ func (s *server) generateDailySummary(c *gin.Context) {
 	}
 	record, _ := s.loadAIRecord(c.Request.Context(), recordID)
 	c.JSON(http.StatusOK, gin.H{"summary": record, "cached": false, "remaining": remaining})
+}
+
+func (s *server) latestDailyPlan(c *gin.Context) {
+	userID := c.MustGet("userID").(uuid.UUID)
+	day := strings.TrimSpace(c.Query("date"))
+	if !validDayKey(day) {
+		fail(c, http.StatusBadRequest, "日期格式不正确")
+		return
+	}
+	record, err := s.loadLatestAIRecord(c.Request.Context(), userID, "daily_plan", day)
+	if errors.Is(err, pgx.ErrNoRows) {
+		c.JSON(http.StatusOK, gin.H{"plan": nil, "remaining": s.remainingAIQuota(c.Request.Context(), userID)})
+		return
+	}
+	if err != nil {
+		fail(c, http.StatusInternalServerError, "无法读取今日方案")
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"plan": record, "remaining": s.remainingAIQuota(c.Request.Context(), userID)})
+}
+
+func (s *server) generateDailyPlan(c *gin.Context) {
+	var input dailyPlanInput
+	if err := bindLimitedJSON(c, &input); err != nil || !validDayKey(input.Date) || len(input.Contexts) != 2 {
+		fail(c, http.StatusBadRequest, "前两日数据不完整或格式不正确")
+		return
+	}
+	for _, daily := range input.Contexts {
+		if !validDailyContext(daily) {
+			fail(c, http.StatusBadRequest, "前两日数据不完整或格式不正确")
+			return
+		}
+	}
+	contextVersion := "v1-" + input.Contexts[0].Version + "-" + input.Contexts[1].Version
+	if len(contextVersion) > 160 {
+		contextVersion = fmt.Sprintf("v1-%x", []byte(contextVersion)[:60])
+	}
+	userID := c.MustGet("userID").(uuid.UUID)
+	if !input.Force {
+		if cached, err := s.loadLatestAIRecord(c.Request.Context(), userID, "daily_plan", input.Date); err == nil && cached.ContextVersion == contextVersion {
+			c.JSON(http.StatusOK, gin.H{"plan": cached, "cached": true, "remaining": s.remainingAIQuota(c.Request.Context(), userID)})
+			return
+		}
+	}
+	recordID, remaining, err := s.reserveAIInteraction(c.Request.Context(), userID, "daily_plan", input.Date, contextVersion, "")
+	if err != nil {
+		s.respondAIReservationError(c, err)
+		return
+	}
+	contextJSON, _ := json.Marshal(input.Contexts)
+	prompt := `请根据以下连续前两天的档案、饮食和运动记录，为用户制定今天的减脂执行方案。使用小标题：今日重点、饮食方案、运动方案、执行提醒。比较两天的总热量、蛋白质、脂肪、碳水和运动；只有记录存在时才作判断，不得把缺失记录当作真实零摄入。方案应具体、容易执行，不鼓励极端节食，也不要要求用户为了达标强行吃满。控制在500字以内。前两日数据：` + string(contextJSON)
+	content, usage, callErr := s.ai.chat(c.Request.Context(), nutritionSafetyBoundary, prompt, false)
+	if callErr != nil {
+		s.failAIInteraction(c.Request.Context(), recordID, callErr, usage)
+		fail(c, http.StatusBadGateway, friendlyAIError(callErr))
+		return
+	}
+	if err := s.completeAIInteraction(c.Request.Context(), recordID, content, nil, usage); err != nil {
+		fail(c, http.StatusInternalServerError, "今日方案已生成但保存失败")
+		return
+	}
+	record, _ := s.loadAIRecord(c.Request.Context(), recordID)
+	c.JSON(http.StatusOK, gin.H{"plan": record, "cached": false, "remaining": remaining})
+}
+
+func (s *server) aiHistory(c *gin.Context) {
+	userID := c.MustGet("userID").(uuid.UUID)
+	filter := strings.TrimSpace(c.DefaultQuery("type", "all"))
+	if filter != "all" && filter != "daily_summary" && filter != "question" {
+		fail(c, http.StatusBadRequest, "历史类型不正确")
+		return
+	}
+	limit := 20
+	if rawLimit := c.Query("limit"); rawLimit != "" {
+		parsed, err := strconv.Atoi(rawLimit)
+		if err != nil {
+			fail(c, http.StatusBadRequest, "limit格式不正确")
+			return
+		}
+		limit = parsed
+	}
+	if limit < 1 {
+		limit = 1
+	}
+	if limit > 50 {
+		limit = 50
+	}
+	before := strings.TrimSpace(c.Query("before"))
+	var beforeValue any
+	if before != "" {
+		parsed, err := time.Parse(time.RFC3339Nano, before)
+		if err != nil {
+			fail(c, http.StatusBadRequest, "before格式不正确")
+			return
+		}
+		beforeValue = parsed
+	}
+	rows, err := s.db.Query(c.Request.Context(), `
+		SELECT id,interaction_type,COALESCE(day_key::text,''),COALESCE(question,''),COALESCE(response_text,''),created_at
+		FROM ai_interactions
+		WHERE user_id=$1 AND status='success'
+		  AND interaction_type IN ('daily_summary','question')
+		  AND ($2='all' OR interaction_type=$2)
+		  AND ($3::timestamptz IS NULL OR created_at < $3)
+		ORDER BY created_at DESC,id DESC LIMIT $4`, userID, filter, beforeValue, limit)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, "无法读取AI历史")
+		return
+	}
+	defer rows.Close()
+	items := make([]aiHistoryRecord, 0, limit)
+	for rows.Next() {
+		var item aiHistoryRecord
+		if err := rows.Scan(&item.ID, &item.InteractionType, &item.DayKey, &item.Question, &item.ResponseText, &item.CreatedAt); err != nil {
+			fail(c, http.StatusInternalServerError, "无法读取AI历史")
+			return
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		fail(c, http.StatusInternalServerError, "无法读取AI历史")
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"items": items})
 }
 
 func (s *server) estimateFood(c *gin.Context) {
