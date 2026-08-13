@@ -46,6 +46,7 @@ fi
 
 app_version=$(node -p "require('$app_config').expo.version")
 version_code=$(node -p "require('$app_config').expo.android.versionCode")
+default_notification_channel=$(node -p "require('$app_config').expo.plugins.find(p => Array.isArray(p) && p[0] === 'expo-notifications')?.[1]?.defaultChannel || 'default'")
 
 export ANDROID_HOME="$android_sdk"
 export JAVA_HOME="$android_java"
@@ -85,6 +86,8 @@ fi
 # a destructive prebuild, so keep the generated Gradle values in sync here.
 native_gradle="$android_dir/app/build.gradle"
 perl -0pi -e "s/versionCode\s+\d+/versionCode $version_code/; s/versionName\s+\"[^\"]+\"/versionName \"$app_version\"/" "$native_gradle"
+native_manifest="$android_dir/app/src/main/AndroidManifest.xml"
+perl -0pi -e "s/(com\.google\.firebase\.messaging\.default_notification_channel_id\" android:value=\")[^\"]+/\$1$default_notification_channel/" "$native_manifest"
 
 gradle_runner="$android_dir/gradlew"
 cached_gradle=$(find "$gradle_cache/wrapper/dists/gradle-9.2.0-bin" -type f -path '*/gradle-9.2.0/bin/gradle' -print -quit 2>/dev/null || true)

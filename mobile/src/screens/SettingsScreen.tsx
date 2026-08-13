@@ -7,7 +7,12 @@ import { ACTIVITY_LEVELS, FATTY_LIVER_LEVELS } from '../data/seed';
 import { calculateGoals } from '../lib/calculations';
 import { API_URL } from '../lib/api';
 import { getSyncStatus } from '../lib/database';
-import { sendTestReminder } from '../lib/notifications';
+import {
+  getReminderDiagnostics,
+  REMINDER_CHANNEL_ID,
+  ReminderDiagnostics,
+  sendTestReminder,
+} from '../lib/notifications';
 import { backupNow, restoreLatestBackup } from '../lib/sync';
 import { useAuth } from '../context/AuthContext';
 import { useApp } from '../context/AppContext';
@@ -191,6 +196,11 @@ function ReminderEditor({ settings }: { settings: ReminderSettings }) {
   const [draft, setDraft] = useState(settings);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [diagnostics, setDiagnostics] = useState<ReminderDiagnostics | null>(null);
+  const refreshDiagnostics = () => getReminderDiagnostics().then(setDiagnostics).catch(() => undefined);
+  useEffect(() => {
+    void refreshDiagnostics();
+  }, [settings.updatedAt]);
   const days = [{ v: 1, l: '一' }, { v: 2, l: '二' }, { v: 3, l: '三' }, { v: 4, l: '四' }, { v: 5, l: '五' }, { v: 6, l: '六' }, { v: 0, l: '日' }];
   const save = async () => {
     const timeFields = [
@@ -214,7 +224,9 @@ function ReminderEditor({ settings }: { settings: ReminderSettings }) {
         updatedAt: new Date().toISOString(),
       };
       await app.saveReminders(next);
-      Alert.alert('提醒已更新', next.enabled ? '新的本地提醒已安排。' : '所有本地提醒已关闭。');
+      const status = await getReminderDiagnostics();
+      setDiagnostics(status);
+      Alert.alert('提醒已更新', next.enabled ? `安卓系统已登记 ${status.scheduledCount} 条定时提醒，退出 App 后仍会由系统触发。` : '所有本地提醒已关闭。');
     } catch (error) {
       Alert.alert('无法设置提醒', error instanceof Error ? error.message : '请检查系统通知权限');
     } finally { setSaving(false); }
@@ -223,11 +235,39 @@ function ReminderEditor({ settings }: { settings: ReminderSettings }) {
     setTesting(true);
     try {
       await sendTestReminder();
-      Alert.alert('测试通知已发送', '应该立即出现顶部横幅、声音和振动。若仍未出现，请打开系统权限设置检查通知类别。');
+      await refreshDiagnostics();
+      Alert.alert('测试通知已安排', '请关闭提示后返回桌面并锁屏，约 10 秒后应出现声音和振动。这次测试走的就是 App 退出后使用的安卓系统定时通道。');
     } catch (error) {
       Alert.alert('测试通知失败', error instanceof Error ? error.message : '请检查系统通知权限');
     } finally { setTesting(false); }
   };
+  const openNotificationChannelSettings = async () => {
+    try {
+      await Linking.sendIntent('android.settings.CHANNEL_NOTIFICATION_SETTINGS', [
+        { key: 'android.provider.extra.APP_PACKAGE', value: 'com.qingzhi.fatlosshelper' },
+        { key: 'android.provider.extra.CHANNEL_ID', value: REMINDER_CHANNEL_ID },
+      ]);
+    } catch {
+      await Linking.openSettings();
+    }
+  };
+  const openAlarmSettings = async () => {
+    try {
+      await Linking.sendIntent('android.settings.REQUEST_SCHEDULE_EXACT_ALARM');
+    } catch {
+      await Linking.openSettings();
+    }
+  };
+  const openBatterySettings = async () => {
+    try {
+      await Linking.sendIntent('android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS');
+    } catch {
+      await Linking.openSettings();
+    }
+  };
+  const diagnosticText = !diagnostics
+    ? '正在读取安卓提醒状态…'
+    : `通知权限${diagnostics.permissionGranted ? '已开启' : '未开启'} · 系统已安排 ${diagnostics.scheduledCount} 条 · 声音${diagnostics.soundEnabled ? '已开启' : '未开启'} · 振动${diagnostics.vibrationEnabled ? '已开启' : '未开启'}`;
   return (
     <Card style={{ gap: 15 }}>
       <View style={styles.settingRow}>
@@ -248,10 +288,15 @@ function ReminderEditor({ settings }: { settings: ReminderSettings }) {
       <PrimaryButton label="保存提醒设置" onPress={save} loading={saving} />
       <View style={[styles.infoBox, { backgroundColor: colors.surfaceMuted, gap: 8 }]}>
         <Text style={[styles.settingTitle, { color: colors.text }]}>关于后台运行</Text>
-        <AppText muted style={{ fontSize: 10, lineHeight: 16 }}>提醒由安卓系统调度，不要求应用常驻内存。若手机仍延迟提醒，请在系统设置中允许通知、闹钟与提醒，并把电池策略设为“不受限制”；部分品牌还需允许自启动。</AppText>
+        <AppText muted style={{ fontSize: 10, lineHeight: 16 }}>提醒由安卓系统闹钟调度，不要求应用常驻内存。保存后请确认下方“系统已安排”不是 0；新安卓还需允许“闹钟与提醒”。部分品牌手机需将电池策略设为“不受限制”并允许自启动。</AppText>
+        <Text style={{ color: diagnostics?.permissionGranted && diagnostics.channelEnabled ? colors.primary : colors.orange, fontSize: 10, lineHeight: 16, fontWeight: '800' }}>{diagnosticText}</Text>
         <View style={styles.buttonRow}>
           <View style={{ flex: 1 }}><PrimaryButton label="发送测试通知" onPress={testReminder} loading={testing} compact /></View>
-          <View style={{ flex: 1 }}><PrimaryButton label="系统权限设置" onPress={() => Linking.openSettings()} secondary compact /></View>
+          <View style={{ flex: 1 }}><PrimaryButton label="声音与振动设置" onPress={openNotificationChannelSettings} secondary compact /></View>
+        </View>
+        <View style={styles.buttonRow}>
+          <View style={{ flex: 1 }}><PrimaryButton label="允许精确定时" onPress={openAlarmSettings} secondary compact /></View>
+          <View style={{ flex: 1 }}><PrimaryButton label="电池后台设置" onPress={openBatterySettings} secondary compact /></View>
         </View>
       </View>
     </Card>

@@ -4,7 +4,7 @@ import { ReminderSettings } from '../types';
 
 // Android keeps a channel's user-visible importance/sound policy after it is
 // first created. A new id lets upgraded installs receive the audible policy.
-const CHANNEL_ID = 'healthy-reminders-v2';
+export const REMINDER_CHANNEL_ID = 'healthy-reminders-v3';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -26,10 +26,15 @@ function parseTime(value: string, minutesBefore = 0) {
 
 async function ensureReminderChannel() {
   if (Platform.OS === 'android') {
-    await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
+    await Notifications.setNotificationChannelAsync(REMINDER_CHANNEL_ID, {
       name: '饮食与运动提醒（重要）',
+      description: '餐前、运动和测试提醒；需要声音与振动',
       importance: Notifications.AndroidImportance.MAX,
       sound: 'default',
+      audioAttributes: {
+        usage: Notifications.AndroidAudioUsage.ALARM,
+        contentType: Notifications.AndroidAudioContentType.SONIFICATION,
+      },
       enableVibrate: true,
       vibrationPattern: [0, 300, 180, 300],
       lightColor: '#2F7D5A',
@@ -46,7 +51,7 @@ export async function requestNotificationPermission() {
   if (!allowed) return false;
 
   if (Platform.OS === 'android') {
-    const channel = await Notifications.getNotificationChannelAsync(CHANNEL_ID);
+    const channel = await Notifications.getNotificationChannelAsync(REMINDER_CHANNEL_ID);
     if (channel?.importance === Notifications.AndroidImportance.NONE) {
       throw new Error('“饮食与运动提醒（重要）”通知类别已关闭，请在系统通知设置中重新开启');
     }
@@ -65,8 +70,10 @@ function reminderContent(title: string, body: string, data: Record<string, strin
 }
 
 export async function scheduleReminders(settings: ReminderSettings) {
-  await Notifications.cancelAllScheduledNotificationsAsync();
-  if (!settings.enabled) return;
+  if (!settings.enabled) {
+    await Notifications.cancelAllScheduledNotificationsAsync();
+    return 0;
+  }
 
   const meals: Array<{ key: keyof ReminderSettings; title: string; body: string }> = [
     { key: 'breakfast', title: '早餐前的小准备 🌿', body: '还有 30 分钟到早餐，记得按计划选择并记录食物。' },
@@ -77,16 +84,20 @@ export async function scheduleReminders(settings: ReminderSettings) {
   const activeMeals = meals.filter(meal => String(settings[meal.key]).trim());
   const exercise = settings.exercise.trim();
   const hasExerciseReminder = Boolean(exercise && settings.exerciseDays.length);
-  if (!activeMeals.length && !hasExerciseReminder) return;
+  if (!activeMeals.length && !hasExerciseReminder) {
+    await Notifications.cancelAllScheduledNotificationsAsync();
+    return 0;
+  }
 
   const allowed = await requestNotificationPermission();
   if (!allowed) throw new Error('通知权限未开启，请在系统设置中允许通知');
+  await Notifications.cancelAllScheduledNotificationsAsync();
 
   for (const meal of activeMeals) {
     const time = parseTime(String(settings[meal.key]).trim(), 30);
     await Notifications.scheduleNotificationAsync({
       content: reminderContent(meal.title, meal.body, { screen: 'record' }),
-      trigger: { type: Notifications.SchedulableTriggerInputTypes.DAILY, ...time, channelId: CHANNEL_ID },
+      trigger: { type: Notifications.SchedulableTriggerInputTypes.DAILY, ...time, channelId: REMINDER_CHANNEL_ID },
     });
   }
 
@@ -105,7 +116,7 @@ export async function scheduleReminders(settings: ReminderSettings) {
           type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
           weekday,
           ...exerciseTime,
-          channelId: CHANNEL_ID,
+          channelId: REMINDER_CHANNEL_ID,
         },
       });
     }
@@ -116,6 +127,7 @@ export async function scheduleReminders(settings: ReminderSettings) {
   if (scheduled.length !== expected) {
     throw new Error(`系统仅成功安排 ${scheduled.length}/${expected} 条提醒，请检查通知和“闹钟与提醒”权限`);
   }
+  return scheduled.length;
 }
 
 export async function rescheduleRemindersIfAuthorized(settings: ReminderSettings) {
@@ -128,14 +140,62 @@ export async function rescheduleRemindersIfAuthorized(settings: ReminderSettings
 export async function sendTestReminder() {
   const allowed = await requestNotificationPermission();
   if (!allowed) throw new Error('通知权限未开启，请在系统设置中允许通知');
+  if (Platform.OS === 'android') {
+    const channel = await Notifications.getNotificationChannelAsync(REMINDER_CHANNEL_ID);
+    if (!channel?.sound || !channel.enableVibrate || channel.importance < Notifications.AndroidImportance.HIGH) {
+      throw new Error('提醒类别当前被设为静音或未开启振动，请点击“声音与振动设置”重新开启');
+    }
+  }
   await Notifications.scheduleNotificationAsync({
     content: reminderContent(
       '轻脂管家测试提醒 🔔',
       '如果你看到横幅、听到提示音并感到振动，通知通道工作正常。',
       { kind: 'test' },
     ),
-    trigger: null,
+    // A short system alarm verifies the same out-of-process path used by meal
+    // reminders. It also binds the notification explicitly to the audible
+    // channel instead of Android's possibly silent fallback channel.
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+      seconds: 10,
+      repeats: false,
+      channelId: REMINDER_CHANNEL_ID,
+    },
   });
+}
+
+export interface ReminderDiagnostics {
+  permissionGranted: boolean;
+  scheduledCount: number;
+  channelEnabled: boolean;
+  soundEnabled: boolean;
+  vibrationEnabled: boolean;
+}
+
+export async function getReminderDiagnostics(): Promise<ReminderDiagnostics> {
+  const [permission, scheduled] = await Promise.all([
+    Notifications.getPermissionsAsync(),
+    Notifications.getAllScheduledNotificationsAsync(),
+  ]);
+  const reminderCount = scheduled.filter(item => item.content.data?.kind !== 'test').length;
+  if (Platform.OS !== 'android') {
+    return {
+      permissionGranted: permission.status === 'granted',
+      scheduledCount: reminderCount,
+      channelEnabled: true,
+      soundEnabled: true,
+      vibrationEnabled: true,
+    };
+  }
+  await ensureReminderChannel();
+  const channel = await Notifications.getNotificationChannelAsync(REMINDER_CHANNEL_ID);
+  return {
+    permissionGranted: permission.status === 'granted',
+    scheduledCount: reminderCount,
+    channelEnabled: Boolean(channel && channel.importance >= Notifications.AndroidImportance.HIGH),
+    soundEnabled: Boolean(channel?.sound),
+    vibrationEnabled: Boolean(channel?.enableVibrate),
+  };
 }
 
 export function cancelReminders() {
