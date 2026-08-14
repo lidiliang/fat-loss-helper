@@ -1,6 +1,8 @@
-import { useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, Share, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { useMemo, useRef, useState } from 'react';
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import * as Sharing from 'expo-sharing';
 import Svg, { Circle, Line, Polyline, Text as SvgText } from 'react-native-svg';
+import { captureRef, releaseCapture } from 'react-native-view-shot';
 import { Card, EmptyState, Header, ProgressBar, Screen, SectionTitle } from '../components/ui';
 import { useApp } from '../context/AppContext';
 import { useColors } from '../theme';
@@ -21,15 +23,6 @@ export function TrendsScreen() {
   const weightChange = latest && oldest ? latest.weightKg - oldest.weightKg : 0;
   const achievements = buildAchievements(oldest?.weightKg ?? profile.weightKg, profile.targetWeightKg, profile.calorieGoal, dailyIntakes, weights);
   const unlockedCount = achievements.filter(item => item.unlocked).length;
-
-  const shareProgressText = () => {
-    const changeText = weights.length > 1
-      ? `阶段体重变化 ${weightChange > 0 ? '+' : ''}${weightChange.toFixed(1)} kg，`
-      : '';
-    return Share.share({
-      message: `我正在用轻脂管家坚持健康减脂：${changeText}近30个记录日达标率 ${complianceRate}%，已解锁 ${unlockedCount}/${achievements.length} 个减脂里程碑。一起稳稳坚持！`,
-    });
-  };
 
   return (
     <Screen>
@@ -88,7 +81,6 @@ export function TrendsScreen() {
       <ShareCardModal
         visible={shareOpen}
         onClose={() => setShareOpen(false)}
-        onShareText={() => void shareProgressText()}
         latestWeight={latest?.weightKg}
         targetWeight={profile.targetWeightKg}
         weightChange={weightChange}
@@ -110,7 +102,6 @@ export function TrendsScreen() {
 function ShareCardModal({
   visible,
   onClose,
-  onShareText,
   latestWeight,
   targetWeight,
   weightChange,
@@ -121,7 +112,6 @@ function ShareCardModal({
 }: {
   visible: boolean;
   onClose: () => void;
-  onShareText: () => void;
   latestWeight?: number;
   targetWeight: number;
   weightChange: number;
@@ -131,12 +121,43 @@ function ShareCardModal({
   achievements: Achievement[];
 }) {
   const colors = useColors();
+  const shareCardRef = useRef<View>(null);
+  const [sharing, setSharing] = useState(false);
   const unlockedNames = achievements.filter(item => item.unlocked).slice(-3);
+
+  const shareProgressImage = async () => {
+    if (sharing) return;
+    setSharing(true);
+    let imageUri: string | undefined;
+    try {
+      if (!await Sharing.isAvailableAsync()) {
+        Alert.alert('暂时无法分享', '当前设备不支持系统文件分享。');
+        return;
+      }
+      imageUri = await captureRef(shareCardRef, {
+        format: 'png',
+        quality: 1,
+        result: 'tmpfile',
+      });
+      await Sharing.shareAsync(imageUri, {
+        mimeType: 'image/png',
+        UTI: 'public.png',
+        dialogTitle: '分享我的阶段成绩',
+      });
+    } catch (error) {
+      console.warn('Unable to share progress card', error);
+      Alert.alert('分享失败', '成绩卡生成失败，请稍后再试。');
+    } finally {
+      if (imageUri) releaseCapture(imageUri);
+      setSharing(false);
+    }
+  };
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.shareModalBackdrop}>
         <View style={styles.shareModalContent}>
-          <View style={[styles.shareCard, { backgroundColor: colors.primaryDark }]}>
+          <View ref={shareCardRef} collapsable={false} style={[styles.shareCard, { backgroundColor: colors.primaryDark }]}>
             <View style={styles.shareCardTopline}>
               <Text style={styles.shareCardBrand}>轻脂管家</Text>
               <Text style={styles.shareCardLeaf}>✦</Text>
@@ -159,10 +180,10 @@ function ShareCardModal({
             </View>
             <Text style={styles.shareCardFooter}>不追求完美，只把今天做好一点。</Text>
           </View>
-          <Text style={[styles.shareModalHint, { color: colors.textMuted }]}>可直接截屏保存这张阶段成绩卡片</Text>
+          <Text style={[styles.shareModalHint, { color: colors.textMuted }]}>生成高清图片后，通过系统面板分享</Text>
           <View style={styles.shareModalActions}>
             <View style={{ flex: 1 }}><Pressable onPress={onClose} style={[styles.shareModalButton, { borderColor: colors.border }]}><Text style={{ color: colors.textMuted, fontWeight: '800' }}>关闭</Text></Pressable></View>
-            <View style={{ flex: 1 }}><Pressable onPress={onShareText} style={[styles.shareModalButton, { backgroundColor: colors.primary, borderColor: colors.primary }]}><Text style={{ color: colors.white, fontWeight: '800' }}>分享文字</Text></Pressable></View>
+            <View style={{ flex: 1 }}><Pressable disabled={sharing} onPress={() => void shareProgressImage()} style={[styles.shareModalButton, { backgroundColor: colors.primary, borderColor: colors.primary, opacity: sharing ? 0.65 : 1 }]}><Text style={{ color: colors.white, fontWeight: '800' }}>{sharing ? '生成中…' : '分享图片'}</Text></Pressable></View>
           </View>
         </View>
       </View>
