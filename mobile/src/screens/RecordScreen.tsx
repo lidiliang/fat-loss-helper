@@ -200,7 +200,9 @@ export function RecordScreen() {
                 </View>
               ))}
             </Card>
-            {query.trim() && visibleFoods.length === 1 ? <View style={styles.searchResultSpacer} /> : null}
+            {query.trim() && visibleFoods.length > 0 ? (
+              <View style={visibleFoods.length >= 5 ? styles.searchResultSpacerOneRow : styles.searchResultSpacerTwoRows} />
+            ) : null}
           </View>
 
           <View onLayout={event => { historyY.current = event.nativeEvent.layout.y; }}>
@@ -708,7 +710,8 @@ const styles = StyleSheet.create({
   roundAdd: { width: 31, height: 31, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   search: { flexDirection: 'row', alignItems: 'center', paddingLeft: 14, borderWidth: 1, borderRadius: 17 },
   searchSection: { gap: 12 },
-  searchResultSpacer: { height: 134 },
+  searchResultSpacerOneRow: { height: 67 },
+  searchResultSpacerTwoRows: { height: 134 },
   sectionActions: { flexDirection: 'row', alignItems: 'center', gap: 13 },
   foodRow: { minHeight: 67, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, gap: 10 },
   foodName: { fontSize: 13, fontWeight: '800' },
