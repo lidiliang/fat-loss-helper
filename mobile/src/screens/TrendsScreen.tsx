@@ -18,7 +18,7 @@ export function TrendsScreen() {
   const latest = weights[0];
   const oldest = weights[weights.length - 1];
   const weightChange = latest && oldest ? latest.weightKg - oldest.weightKg : 0;
-  const achievements = buildAchievements(profile.targetWeightKg, profile.calorieGoal, dailyIntakes, weights);
+  const achievements = buildAchievements(oldest?.weightKg ?? profile.weightKg, profile.targetWeightKg, profile.calorieGoal, dailyIntakes, weights);
   const unlockedCount = achievements.filter(item => item.unlocked).length;
 
   const shareProgress = () => {
@@ -102,21 +102,24 @@ interface Achievement {
   unlocked: boolean;
 }
 
-function buildAchievements(targetWeight: number, calorieGoal: number, intakes: Array<{ date: string; calories: number }>, weights: Array<{ weightKg: number }>): Achievement[] {
+function buildAchievements(startWeight: number, targetWeight: number, calorieGoal: number, intakes: Array<{ date: string; calories: number }>, weights: Array<{ weightKg: number }>): Achievement[] {
   const recordDays = new Set(intakes.map(item => item.date)).size;
   const bestStreak = calculateBestStreak(intakes.map(item => item.date));
   const compliantDays = intakes.filter(item => item.calories > 0 && item.calories <= calorieGoal * 1.05).length;
   const latest = weights[0]?.weightKg;
-  const oldest = weights[weights.length - 1]?.weightKg;
-  const lostWeight = latest !== undefined && oldest !== undefined ? Math.max(0, oldest - latest) : 0;
-  const distanceToTarget = latest === undefined ? Number.POSITIVE_INFINITY : Math.max(0, latest - targetWeight);
+  const plannedLoss = Math.max(0, startWeight - targetWeight);
+  const achievedLoss = latest === undefined ? 0 : Math.max(0, startWeight - latest);
+  const rawGoalProgress = plannedLoss > 0
+    ? achievedLoss / plannedLoss * 100
+    : latest !== undefined && latest <= targetWeight ? 100 : 0;
+  const goalProgress = Math.min(100, Math.max(0, rawGoalProgress));
   return [
     { id: 'first-log', emoji: '🌱', name: '第一步', detail: '完成第1个饮食记录日', progress: `${Math.min(recordDays, 1)}/1 天`, unlocked: recordDays >= 1 },
     { id: 'streak-3', emoji: '🔥', name: '连续行动', detail: '连续3天记录饮食', progress: `${Math.min(bestStreak, 3)}/3 天`, unlocked: bestStreak >= 3 },
     { id: 'streak-7', emoji: '🏅', name: '一周坚持', detail: '连续7天记录饮食', progress: `${Math.min(bestStreak, 7)}/7 天`, unlocked: bestStreak >= 7 },
     { id: 'compliant-7', emoji: '🎯', name: '稳稳控量', detail: '累计7个摄入达标日', progress: `${Math.min(compliantDays, 7)}/7 天`, unlocked: compliantDays >= 7 },
-    { id: 'lose-1kg', emoji: '🪶', name: '轻盈1公斤', detail: '阶段体重下降1公斤', progress: `${Math.min(lostWeight, 1).toFixed(1)}/1.0 kg`, unlocked: lostWeight >= 1 },
-    { id: 'near-target', emoji: '🏁', name: '目标在望', detail: '距离目标体重不超过3公斤', progress: Number.isFinite(distanceToTarget) ? `还差 ${distanceToTarget.toFixed(1)} kg` : '先记录体重', unlocked: distanceToTarget <= 3 },
+    { id: 'record-14', emoji: '🗓️', name: '记录成习惯', detail: '累计完成14个饮食记录日', progress: `${Math.min(recordDays, 14)}/14 天`, unlocked: recordDays >= 14 },
+    { id: 'near-target', emoji: '🏁', name: '目标在望', detail: '完成超过90%的目标减重进度', progress: latest === undefined ? '先记录体重' : `已完成 ${Math.floor(goalProgress)}%`, unlocked: goalProgress > 90 },
   ];
 }
 
