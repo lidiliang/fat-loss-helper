@@ -88,9 +88,10 @@ export function PrimaryButton({ label, onPress, disabled, loading, secondary = f
   );
 }
 
-export function Field({ label, value, onChangeText, placeholder, keyboardType = 'default', secureTextEntry, suffix, multiline, onFocus }: {
+export function Field({ label, value, onChangeText, placeholder, keyboardType = 'default', secureTextEntry, suffix, multiline, onFocus, onPressIn }: {
   label?: string; value: string; onChangeText: (value: string) => void; placeholder?: string;
-  keyboardType?: KeyboardTypeOptions; secureTextEntry?: boolean; suffix?: string; multiline?: boolean; onFocus?: () => void;
+  keyboardType?: KeyboardTypeOptions; secureTextEntry?: boolean; suffix?: string; multiline?: boolean;
+  onFocus?: () => void; onPressIn?: () => void;
 }) {
   const colors = useColors();
   return (
@@ -106,6 +107,7 @@ export function Field({ label, value, onChangeText, placeholder, keyboardType = 
           secureTextEntry={secureTextEntry}
           multiline={multiline}
           onFocus={onFocus}
+          onPressIn={onPressIn}
           style={[styles.input, { color: colors.text }, multiline && { minHeight: 76, textAlignVertical: 'top' }]}
         />
         {suffix ? <Text style={{ color: colors.textMuted, fontSize: 13 }}>{suffix}</Text> : null}

@@ -8,7 +8,33 @@ app_config="$mobile_dir/app.json"
 android_sdk="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
 android_java="${JAVA_HOME:-/Applications/Android Studio.app/Contents/jbr/Contents/Home}"
 gradle_cache="${GRADLE_USER_HOME:-$HOME/.gradle}"
-api_url="${EXPO_PUBLIC_API_URL:-https://fat-loss-helper.iepose.cn/api/v1}"
+env_file="$project_root/.env"
+
+if [ ! -f "$env_file" ]; then
+  printf '%s\n' "缺少环境配置文件: $env_file" >&2
+  exit 1
+fi
+if ! server_url=$(node -e '
+  const fs = require("fs");
+  const file = process.argv[1];
+  const entry = fs.readFileSync(file, "utf8").split(/\r?\n/)
+    .find(line => /^\s*SERVER_URL\s*=/.test(line));
+  if (!entry) throw new Error(".env 缺少 SERVER_URL");
+  let value = entry.replace(/^\s*SERVER_URL\s*=\s*/, "").trim();
+  if ((value.startsWith("\"") && value.endsWith("\"")) || (value.startsWith("\x27") && value.endsWith("\x27"))) {
+    value = value.slice(1, -1).trim();
+  }
+  const parsed = new URL(value);
+  if (!/^https?:$/.test(parsed.protocol)) throw new Error("SERVER_URL 必须使用 http 或 https");
+  process.stdout.write(value.replace(/\/+$/, ""));
+' "$env_file"); then
+  printf '%s\n' "无法读取 .env 中的 SERVER_URL。" >&2
+  exit 1
+fi
+case "$server_url" in
+  */api/v1) api_url="$server_url" ;;
+  *) api_url="$server_url/api/v1" ;;
+esac
 
 if [ "$#" -ne 0 ] && [ "$#" -ne 2 ]; then
   printf '%s\n' "用法: $0 [版本号 versionCode]" >&2
@@ -56,6 +82,7 @@ export NODE_ENV=production
 export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH"
 
 cd "$mobile_dir"
+printf '%s\n' "Release API: $EXPO_PUBLIC_API_URL"
 printf '%s\n' "检查 TypeScript..."
 npm run typecheck
 
@@ -69,6 +96,13 @@ if [ -d "$android_build_dir" ]; then
     printf '%s\n' "清理 $conflict_count 个 macOS/iCloud 构建冲突副本..."
     find "$android_build_dir" -type f -name '* [0-9].*' -delete
   fi
+fi
+# Expo/Gradle does not fingerprint environment variables used by the JS
+# bundle. Remove the generated release bundle so a changed SERVER_URL cannot
+# silently reuse the address embedded by an earlier build.
+release_bundle="$android_build_dir/generated/assets/react/release/index.android.bundle"
+if [ -f "$release_bundle" ]; then
+  rm "$release_bundle"
 fi
 # Native dependency outputs live below node_modules/*/android/build and .cxx.
 # iCloud conflict copies there can otherwise be treated as real .so files and
@@ -114,7 +148,8 @@ set +e
   --offline --no-daemon \
   -PreactNativeArchitectures=arm64-v8a \
   -Pandroid.enableMinifyInReleaseBuilds=true \
-  -Pandroid.enableShrinkResourcesInReleaseBuilds=true
+  -Pandroid.enableShrinkResourcesInReleaseBuilds=true \
+  -Pexpo.useLegacyPackaging=true
 offline_result=$?
 set -e
 
@@ -124,7 +159,8 @@ if [ "$offline_result" -ne 0 ]; then
     --no-daemon \
     -PreactNativeArchitectures=arm64-v8a \
     -Pandroid.enableMinifyInReleaseBuilds=true \
-    -Pandroid.enableShrinkResourcesInReleaseBuilds=true
+    -Pandroid.enableShrinkResourcesInReleaseBuilds=true \
+    -Pexpo.useLegacyPackaging=true
 fi
 
 source_apk="$release_output_dir/app-release.apk"

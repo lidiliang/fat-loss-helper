@@ -168,7 +168,7 @@ export function RecordScreen() {
             />
             <View style={[styles.search, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <Ionicons name="search" size={18} color={colors.textMuted} />
-              <Field value={query} onChangeText={setQuery} onFocus={revealSearchResults} placeholder="米饭、鸡胸肉、苹果…" />
+              <Field value={query} onChangeText={setQuery} onFocus={revealSearchResults} onPressIn={revealSearchResults} placeholder="米饭、鸡胸肉、苹果…" />
             </View>
             <Card style={{ padding: 0, overflow: 'hidden' }}>
               {!visibleFoods.length ? <EmptyState icon="🔎" title="没有找到食物" detail="换个关键词，或添加自定义食物。" /> : visibleFoods.map((food, index) => (
