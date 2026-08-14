@@ -2,7 +2,7 @@
   "expo": {
     "name": "轻脂管家",
     "slug": "qingzhi-fat-loss-helper",
-    "version": "1.1.13",
+    "version": "1.1.14",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -12,7 +12,7 @@
     },
     "android": {
       "package": "com.qingzhi.fatlosshelper",
-      "versionCode": 16,
+      "versionCode": 17,
       "permissions": [
         "android.permission.SCHEDULE_EXACT_ALARM"
       ],

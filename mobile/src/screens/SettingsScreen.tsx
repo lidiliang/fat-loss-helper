@@ -199,6 +199,7 @@ function ReminderEditor({ settings }: { settings: ReminderSettings }) {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [diagnostics, setDiagnostics] = useState<ReminderDiagnostics | null>(null);
+  const [reliabilityOpen, setReliabilityOpen] = useState(false);
   const refreshDiagnostics = () => getReminderDiagnostics().then(setDiagnostics).catch(() => undefined);
   useEffect(() => {
     setDraft(settings);
@@ -281,7 +282,7 @@ function ReminderEditor({ settings }: { settings: ReminderSettings }) {
     ? '正在读取安卓提醒状态…'
     : `通知权限${diagnostics.permissionGranted ? '已开启' : '未开启'} · 系统已安排 ${diagnostics.scheduledCount} 条 · 通道${diagnostics.lockscreenVisible ? '允许锁屏显示' : '已隐藏锁屏内容'} · 声音${diagnostics.soundEnabled ? '已开启' : '未开启'} · 振动${diagnostics.vibrationEnabled ? '已开启' : '未开启'}`;
   return (
-    <Card style={{ gap: 15 }}>
+    <Card style={{ gap: 11, padding: 14 }}>
       <View style={styles.settingRow}>
         <View style={[styles.settingIcon, { backgroundColor: colors.primarySoft }]}><Ionicons name="notifications-outline" size={20} color={colors.primary} /></View>
         <View style={{ flex: 1 }}><Text style={[styles.settingTitle, { color: colors.text }]}>启用饮食与运动提醒</Text><Text style={[styles.settingDetail, { color: colors.textMuted }]}>餐前和运动提前量均可自定义</Text></View>
@@ -289,17 +290,20 @@ function ReminderEditor({ settings }: { settings: ReminderSettings }) {
       </View>
       {draft.enabled ? (
         <>
-          <AppText muted style={{ fontSize: 11, lineHeight: 17 }}>只填写需要的提醒时间；任一项留空即关闭该项提醒。</AppText>
+          <AppText muted style={{ fontSize: 10, lineHeight: 15 }}>只填写需要的时间，留空即关闭该项；手动填写 0 可到点提醒。</AppText>
           <View style={styles.buttonRow}>
             <Field label="餐前提前" value={mealAdvanceText} onChangeText={setMealAdvanceText} keyboardType="number-pad" suffix="分钟" />
             <Field label="运动提前" value={exerciseAdvanceText} onChangeText={setExerciseAdvanceText} keyboardType="number-pad" suffix="分钟" />
           </View>
-          <AppText muted style={{ fontSize: 10, lineHeight: 16 }}>支持 0–240 分钟，0 表示到点提醒。快捷选择：</AppText>
-          <View style={styles.chipRow}>
-            {[0, 15, 30, 60].map(value => <Chip key={`meal-${value}`} label={`餐前 ${value}分`} small selected={mealAdvanceText === String(value)} onPress={() => setMealAdvanceText(String(value))} />)}
-          </View>
-          <View style={styles.chipRow}>
-            {[0, 15, 30, 60].map(value => <Chip key={`exercise-${value}`} label={`运动 ${value}分`} small selected={exerciseAdvanceText === String(value)} onPress={() => setExerciseAdvanceText(String(value))} />)}
+          <View style={[styles.advancePresets, { backgroundColor: colors.surfaceMuted }]}>
+            <View style={styles.advancePresetRow}>
+              <Text style={[styles.advancePresetLabel, { color: colors.textMuted }]}>餐前快捷</Text>
+              <View style={styles.compactChipRow}>{[15, 30, 60].map(value => <Chip key={`meal-${value}`} label={`${value}分`} small selected={mealAdvanceText === String(value)} onPress={() => setMealAdvanceText(String(value))} />)}</View>
+            </View>
+            <View style={styles.advancePresetRow}>
+              <Text style={[styles.advancePresetLabel, { color: colors.textMuted }]}>运动快捷</Text>
+              <View style={styles.compactChipRow}>{[15, 30, 60].map(value => <Chip key={`exercise-${value}`} label={`${value}分`} small selected={exerciseAdvanceText === String(value)} onPress={() => setExerciseAdvanceText(String(value))} />)}</View>
+            </View>
           </View>
           <View style={styles.buttonRow}><Field label="早餐（可选）" value={draft.breakfast} placeholder="留空则不提醒" onChangeText={breakfast => setDraft({ ...draft, breakfast })} keyboardType="numbers-and-punctuation" /><Field label="午餐（可选）" value={draft.lunch} placeholder="留空则不提醒" onChangeText={lunch => setDraft({ ...draft, lunch })} keyboardType="numbers-and-punctuation" /></View>
           <View style={styles.buttonRow}><Field label="晚餐（可选）" value={draft.dinner} placeholder="留空则不提醒" onChangeText={dinner => setDraft({ ...draft, dinner })} keyboardType="numbers-and-punctuation" /><Field label="加餐（可选）" value={draft.snack} placeholder="留空则不提醒" onChangeText={snack => setDraft({ ...draft, snack })} keyboardType="numbers-and-punctuation" /></View>
@@ -310,9 +314,15 @@ function ReminderEditor({ settings }: { settings: ReminderSettings }) {
       ) : null}
       <PrimaryButton label="保存提醒设置" onPress={save} loading={saving} />
       <View style={[styles.infoBox, { backgroundColor: colors.surfaceMuted, gap: 8 }]}>
-        <Text style={[styles.settingTitle, { color: colors.text }]}>关于后台运行</Text>
-        <AppText muted style={{ fontSize: 10, lineHeight: 16 }}>提醒由安卓系统闹钟调度，不要求应用常驻内存。已配置为锁屏公开显示；若锁屏时仍不显示或不亮屏，请在通知类别中允许锁屏通知，并在手机系统中开启“锁屏通知亮屏”。新安卓还需允许“闹钟与提醒”，部分品牌需允许自启动。</AppText>
-        <Text style={{ color: diagnostics?.permissionGranted && diagnostics.channelEnabled ? colors.primary : colors.orange, fontSize: 10, lineHeight: 16, fontWeight: '800' }}>{diagnosticText}</Text>
+        <Pressable onPress={() => setReliabilityOpen(value => !value)} style={styles.reliabilityHeader} accessibilityLabel={`${reliabilityOpen ? '收起' : '展开'}通知可靠性设置`}>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.settingTitle, { color: colors.text }]}>通知可靠性与系统权限</Text>
+            <Text numberOfLines={2} style={{ color: diagnostics?.permissionGranted && diagnostics.channelEnabled ? colors.primary : colors.orange, fontSize: 9.5, lineHeight: 14, fontWeight: '800', marginTop: 3 }}>{diagnosticText}</Text>
+          </View>
+          <Ionicons name={reliabilityOpen ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textMuted} />
+        </Pressable>
+        {reliabilityOpen ? <>
+        <AppText muted style={{ fontSize: 10, lineHeight: 16 }}>提醒由安卓系统闹钟调度，不要求应用常驻内存。锁屏不显示时，请允许锁屏通知、精确闹钟和锁屏亮屏；部分品牌还需允许自启动。</AppText>
         <View style={styles.buttonRow}>
           <View style={{ flex: 1 }}><PrimaryButton label="测试锁屏通知" onPress={testReminder} loading={testing} compact /></View>
           <View style={{ flex: 1 }}><PrimaryButton label="锁屏/声音设置" onPress={openNotificationChannelSettings} secondary compact /></View>
@@ -321,6 +331,7 @@ function ReminderEditor({ settings }: { settings: ReminderSettings }) {
           <View style={{ flex: 1 }}><PrimaryButton label="允许精确定时" onPress={openAlarmSettings} secondary compact /></View>
           <View style={{ flex: 1 }}><PrimaryButton label="电池后台设置" onPress={openBatterySettings} secondary compact /></View>
         </View>
+        </> : null}
       </View>
     </Card>
   );
@@ -351,6 +362,11 @@ const styles = StyleSheet.create({
   statusDot: { width: 10, height: 10, borderRadius: 5 },
   buttonRow: { flexDirection: 'row', gap: 10 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
+  compactChipRow: { flexDirection: 'row', gap: 6, flex: 1, justifyContent: 'flex-end' },
+  advancePresets: { borderRadius: 13, padding: 9, gap: 7 },
+  advancePresetRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  advancePresetLabel: { width: 58, fontSize: 10, fontWeight: '800' },
+  reliabilityHeader: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   backupNote: { fontSize: 10, lineHeight: 16 },
   serverBox: { borderRadius: 13, padding: 12, gap: 4 },
   serverLabel: { fontSize: 9, fontWeight: '700' },

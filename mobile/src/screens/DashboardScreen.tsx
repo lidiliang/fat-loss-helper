@@ -16,6 +16,8 @@ import { useColors } from '../theme';
 export function DashboardScreen({ onNavigate }: { onNavigate: (tab: RootTab) => void }) {
   const colors = useColors();
   const { profile, foods, foodPreferences, meals, exercises, summary, selectedDate, reminders, addTemplate, setSelectedDate } = useApp();
+  const [expandedRecordSections, setExpandedRecordSections] = useState<Set<string>>(new Set());
+  useEffect(() => setExpandedRecordSections(new Set()), [selectedDate]);
   if (!profile) return null;
 
   const plannedMealTypes: MealType[] = reminders?.snack.trim()
@@ -67,6 +69,15 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (tab: RootTab) => 
         },
       ],
     );
+  };
+
+  const toggleRecordSection = (key: string) => {
+    setExpandedRecordSections(current => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
   };
 
   return (
@@ -189,14 +200,14 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (tab: RootTab) => 
             <View style={{ flex: 1 }}>
               <Text style={[styles.foodTipName, { color: colors.text }]}>{item.name}</Text>
               <Text style={[styles.foodTipPortion, { color: colors.primaryDark }]}>{item.portion}</Text>
-              <Text style={[styles.foodTipReason, { color: colors.textMuted }]}>{item.reason}</Text>
+              <Text numberOfLines={2} style={[styles.foodTipReason, { color: colors.textMuted }]}>{item.reason}</Text>
             </View>
           </View>
         ))}
       </ScrollView>
       <Text style={[styles.foodTipsDisclaimer, { color: colors.textMuted }]}>这些食物便于控制份量和坚持记录；减脂效果仍取决于全天总热量与长期执行。</Text>
 
-      <SectionTitle title={`${todayLabel}摄入与运动明细`} />
+      <SectionTitle title={`${todayLabel}摄入与运动明细`} action={<Text style={{ color: colors.textMuted, fontSize: 10 }}>点击餐次展开</Text>} />
       <Card style={{ padding: 0, overflow: 'hidden' }}>
         {meals.length === 0 && exercises.length === 0 ? (
           <View style={styles.noRecords}>
@@ -215,37 +226,50 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (tab: RootTab) => 
                 fat: sum.fat + item.fat,
                 carb: sum.carb + item.carb,
               }), { calories: 0, protein: 0, fat: 0, carb: 0 });
+              const expanded = expandedRecordSections.has(type);
               return (
                 <View key={type} style={[styles.mealSection, { borderBottomColor: colors.border }]}>
-                  <View style={styles.mealHeader}>
+                  <Pressable onPress={() => toggleRecordSection(type)} style={styles.mealHeader} accessibilityLabel={`${expanded ? '收起' : '展开'}${MEAL_LABELS[type]}明细`}>
                     <View style={[styles.recordIcon, { backgroundColor: colors.surfaceMuted }]}><Text>{type === 'breakfast' ? '☀️' : type === 'lunch' ? '🍚' : type === 'dinner' ? '🌙' : '🍎'}</Text></View>
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.recordName, { color: colors.text }]}>{MEAL_LABELS[type]}</Text>
+                      <Text style={[styles.recordName, { color: colors.text }]}>{MEAL_LABELS[type]} · {items.length} 项</Text>
                       <Text style={[styles.recordFoods, { color: colors.textMuted }]}>蛋白质 {mealSummary.protein.toFixed(1)}g · 脂肪 {mealSummary.fat.toFixed(1)}g · 碳水 {mealSummary.carb.toFixed(1)}g</Text>
                     </View>
                     <Text style={[styles.recordCalories, { color: colors.text }]}>{Math.round(mealSummary.calories)} kcal</Text>
-                  </View>
-                  <View style={[styles.mealItems, { backgroundColor: colors.surfaceMuted }]}>
+                    <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textMuted} />
+                  </Pressable>
+                  {expanded ? <View style={[styles.mealItems, { backgroundColor: colors.surfaceMuted }]}>
                     {items.map(item => (
                       <View key={item.id} style={styles.mealItemRow}>
                         <Text style={[styles.mealItemName, { color: colors.text }]}>{item.foodName}</Text>
                         <Text style={[styles.mealItemNutrition, { color: colors.textMuted }]}>{Math.round(item.calories)} kcal · 蛋 {item.protein.toFixed(1)}g · 脂 {item.fat.toFixed(1)}g · 碳 {item.carb.toFixed(1)}g</Text>
                       </View>
                     ))}
-                  </View>
+                  </View> : null}
                 </View>
               );
             })}
-            {exercises.map(item => (
-              <View key={item.id} style={[styles.recordRow, { borderBottomColor: colors.border }]}>
-                <View style={[styles.recordIcon, { backgroundColor: colors.primarySoft }]}><Text>🏃</Text></View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.recordName, { color: colors.text }]}>{item.exerciseType}</Text>
-                  <Text style={[styles.recordFoods, { color: colors.textMuted }]}>{item.durationMin} 分钟</Text>
-                </View>
-                <Text style={[styles.recordCalories, { color: colors.primary }]}>−{Math.round(item.caloriesBurned)} kcal</Text>
+            {exercises.length ? (
+              <View style={[styles.mealSection, { borderBottomColor: colors.border }]}>
+                <Pressable onPress={() => toggleRecordSection('exercise')} style={styles.mealHeader} accessibilityLabel={`${expandedRecordSections.has('exercise') ? '收起' : '展开'}运动明细`}>
+                  <View style={[styles.recordIcon, { backgroundColor: colors.primarySoft }]}><Text>🏃</Text></View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.recordName, { color: colors.text }]}>运动</Text>
+                    <Text style={[styles.recordFoods, { color: colors.textMuted }]}>{exercises.length} 次 · 共 {exercises.reduce((total, item) => total + item.durationMin, 0)} 分钟</Text>
+                  </View>
+                  <Text style={[styles.recordCalories, { color: colors.primary }]}>−{Math.round(summary.burned)} kcal</Text>
+                  <Ionicons name={expandedRecordSections.has('exercise') ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textMuted} />
+                </Pressable>
+                {expandedRecordSections.has('exercise') ? <View style={[styles.mealItems, { backgroundColor: colors.surfaceMuted }]}>
+                  {exercises.map(item => (
+                    <View key={item.id} style={styles.mealItemRow}>
+                      <Text style={[styles.mealItemName, { color: colors.text }]}>{item.exerciseType} · {item.durationMin} 分钟</Text>
+                      <Text style={[styles.mealItemNutrition, { color: colors.textMuted }]}>消耗约 {Math.round(item.caloriesBurned)} kcal</Text>
+                    </View>
+                  ))}
+                </View> : null}
               </View>
-            ))}
+            ) : null}
           </>
         )}
       </Card>
@@ -264,6 +288,7 @@ function AIAssistantCard() {
   const [answer, setAnswer] = useState('');
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [asking, setAsking] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyType, setHistoryType] = useState<'all' | 'daily_summary' | 'question'>('all');
   const [history, setHistory] = useState<AIHistoryItem[]>([]);
@@ -349,13 +374,15 @@ function AIAssistantCard() {
   const isLatest = Boolean(summaryRecord && context && summaryRecord.contextVersion === context.version);
   return (
     <Card style={styles.aiCard}>
-      <View style={styles.aiHeader}>
+      <Pressable onPress={() => setAssistantOpen(value => !value)} style={styles.aiHeader} accessibilityLabel={`${assistantOpen ? '收起' : '展开'}DeepSeek营养助手`}>
         <View style={[styles.recommendIcon, { backgroundColor: colors.primarySoft }]}><Ionicons name="sparkles" size={18} color={colors.primary} /></View>
         <View style={{ flex: 1 }}>
           <Text style={[styles.aiTitle, { color: colors.text }]}>DeepSeek 营养助手</Text>
           <Text style={[styles.aiMeta, { color: colors.textMuted }]}>当日总结与问答会永久保存在服务端{remaining === null ? '' : ` · 今日剩余 ${remaining}/50 次`}</Text>
         </View>
-      </View>
+        <Ionicons name={assistantOpen ? 'chevron-up' : 'chevron-down'} size={19} color={colors.textMuted} />
+      </Pressable>
+      {assistantOpen ? <>
       {summaryRecord ? (
         <View style={[styles.aiAnswer, { backgroundColor: colors.surfaceMuted }]}>
           <Text style={[styles.aiStatus, { color: isLatest ? colors.primaryDark : colors.orange }]}>{isLatest ? '已按当前记录生成' : '饮食或运动已变化，可重新生成'}</Text>
@@ -410,6 +437,7 @@ function AIAssistantCard() {
         </View>
       ) : null}
       <Text style={[styles.aiDisclaimer, { color: colors.textMuted }]}>AI 建议仅供饮食记录与生活方式参考，不替代医生诊断；重度脂肪肝、血糖异常或明显不适请及时就医。</Text>
+      </> : <Text style={[styles.aiCollapsedHint, { color: summaryRecord ? colors.primaryDark : colors.textMuted }]}>{summaryRecord ? (isLatest ? '今日总结已生成 · 点击查看、提问或浏览历史' : '记录已有变化 · 点击重新生成总结') : '点击生成总结、提问或查看历史对话'}</Text>}
     </Card>
   );
 }
@@ -422,6 +450,7 @@ function DailyPlanCard() {
   const [contexts, setContexts] = useState<AIDailyContext[]>([]);
   const [loading, setLoading] = useState(false);
   const [insufficient, setInsufficient] = useState(false);
+  const [open, setOpen] = useState(false);
 
   const loadOrGenerate = async (force = false) => {
     if (!token || !app.profile) return;
@@ -455,16 +484,19 @@ function DailyPlanCard() {
 
   return (
     <Card style={[styles.dailyPlanCard, { backgroundColor: colors.surface }]}>
-      <View style={styles.aiHeader}>
+      <Pressable onPress={() => setOpen(value => !value)} style={styles.aiHeader} accessibilityLabel={`${open ? '收起' : '展开'}今日控制方案`}>
         <View style={[styles.recommendIcon, { backgroundColor: colors.primarySoft }]}><Ionicons name="calendar-outline" size={18} color={colors.primary} /></View>
         <View style={{ flex: 1 }}>
           <Text style={[styles.aiTitle, { color: colors.text }]}>今日控制方案</Text>
           <Text style={[styles.aiMeta, { color: colors.textMuted }]}>根据昨天与前天的饮食、运动记录生成 · 每日自动一次</Text>
         </View>
-      </View>
+        <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={19} color={colors.textMuted} />
+      </Pressable>
+      {open ? <>
       {loading && !plan ? <Text style={[styles.aiHint, { color: colors.textMuted }]}>正在分析前两天的记录…</Text> : plan ? <View style={[styles.aiAnswer, { backgroundColor: colors.primarySoft }]}><MarkdownText value={plan.responseText} /></View> : <Text style={[styles.aiHint, { color: colors.textMuted }]}>{insufficient ? '前两天记录不足，先完成今天的真实记录；有历史数据后会自动生成方案。' : '暂时无法读取今日方案，可稍后手动重试。'}</Text>}
       {!insufficient ? <PrimaryButton label={plan ? '根据最新记录重新生成' : '生成今日方案'} onPress={() => loadOrGenerate(Boolean(plan))} loading={loading} secondary /> : null}
       {contexts.length ? <Text style={[styles.aiDisclaimer, { color: colors.textMuted }]}>数据范围：{contexts[0].date} 至 {contexts[contexts.length - 1].date}</Text> : null}
+      </> : <Text style={[styles.aiCollapsedHint, { color: plan ? colors.primaryDark : colors.textMuted }]}>{loading ? '正在后台分析前两天记录…' : plan ? '今日方案已生成 · 点击展开查看' : insufficient ? '前两天记录不足，点击查看说明' : '点击查看今日方案'}</Text>}
     </Card>
   );
 }
@@ -530,14 +562,14 @@ const styles = StyleSheet.create({
   miniAddButton: { minHeight: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center', marginTop: 10 },
   miniAddButtonText: { color: '#fff', fontSize: 11, fontWeight: '900' },
   miniEmpty: { fontSize: 10.5, lineHeight: 16 },
-  foodTipsList: { gap: 10, paddingRight: 4 },
-  foodTipCard: { width: 270, minHeight: 126, borderWidth: 1, borderRadius: 18, padding: 14, flexDirection: 'row', alignItems: 'flex-start', gap: 11 },
-  foodTipIcon: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  foodTipName: { fontSize: 14, fontWeight: '900' },
-  foodTipPortion: { fontSize: 11, fontWeight: '800', marginTop: 3 },
-  foodTipReason: { fontSize: 10.5, lineHeight: 16, marginTop: 5 },
+  foodTipsList: { gap: 8, paddingRight: 4 },
+  foodTipCard: { width: 205, minHeight: 98, borderWidth: 1, borderRadius: 15, padding: 10, flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  foodTipIcon: { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  foodTipName: { fontSize: 12.5, fontWeight: '900' },
+  foodTipPortion: { fontSize: 9.5, fontWeight: '800', marginTop: 2 },
+  foodTipReason: { fontSize: 9.5, lineHeight: 14, marginTop: 3 },
   foodTipsDisclaimer: { fontSize: 10, lineHeight: 15, marginTop: -6 },
-  aiCard: { gap: 13 },
+  aiCard: { gap: 10, padding: 14 },
   aiHeader: { flexDirection: 'row', alignItems: 'center', gap: 11 },
   aiTitle: { fontSize: 15, fontWeight: '900' },
   aiMeta: { fontSize: 9.5, lineHeight: 14, marginTop: 3 },
@@ -549,7 +581,8 @@ const styles = StyleSheet.create({
   aiExample: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 7 },
   aiExampleText: { fontSize: 9.5 },
   aiDisclaimer: { fontSize: 9.5, lineHeight: 15 },
-  dailyPlanCard: { gap: 12, borderWidth: 1 },
+  aiCollapsedHint: { fontSize: 10.5, lineHeight: 16, marginLeft: 49 },
+  dailyPlanCard: { gap: 10, borderWidth: 1, padding: 14 },
   historyToggle: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   historyArea: { gap: 9 },
   historyFilter: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 11, paddingVertical: 7 },
@@ -567,7 +600,7 @@ const styles = StyleSheet.create({
   recordName: { fontSize: 14, fontWeight: '800' },
   recordFoods: { fontSize: 11, marginTop: 3 },
   recordCalories: { fontSize: 12, fontWeight: '800' },
-  mealSection: { padding: 14, borderBottomWidth: StyleSheet.hairlineWidth, gap: 10 },
+  mealSection: { padding: 12, borderBottomWidth: StyleSheet.hairlineWidth, gap: 8 },
   mealHeader: { flexDirection: 'row', alignItems: 'center', gap: 11 },
   mealItems: { borderRadius: 13, paddingHorizontal: 11, paddingVertical: 5 },
   mealItemRow: { paddingVertical: 7, gap: 3 },

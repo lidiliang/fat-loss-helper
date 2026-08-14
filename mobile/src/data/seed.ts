@@ -23,6 +23,8 @@ export const FATTY_LIVER_LEVELS: Array<{ value: FattyLiverLevel; label: string }
 ];
 
 export const CONVENIENT_FAT_LOSS_FOODS = [
+  { foodId: 'sweet-potato', emoji: '🍠', name: '蒸红薯', portion: '1个150g约129 kcal', reason: '脂肪极低，适合补充主食碳水和膳食纤维。' },
+  { foodId: 'corn', emoji: '🌽', name: '煮玉米', portion: '1根180g约202 kcal', reason: '方便携带、咀嚼感强，可作为一餐的部分主食。' },
   { foodId: 'konjac-noodles', emoji: '🍜', name: '魔芋丝', portion: '1袋约24 kcal', reason: '低能量、增加餐量和饱腹感；少放油和高盐酱料。' },
   { foodId: 'egg', emoji: '🥚', name: '鸡蛋', portion: '1个约72 kcal', reason: '蛋白质方便；优先水煮蛋或少油蛋花汤。' },
   { foodId: 'skim-milk', emoji: '🥛', name: '脱脂纯牛奶', portion: '1瓶250mL约92 kcal', reason: '补充蛋白质和钙，开盒即饮，适合早餐或加餐。' },
