@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Card, Field, Header, PrimaryButton, ProgressBar, Screen, SectionTitle } from '../components/ui';
 import { MarkdownText } from '../components/MarkdownText';
@@ -18,6 +18,9 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (tab: RootTab) => 
   const { profile, foods, foodPreferences, meals, exercises, summary, selectedDate, reminders, addTemplate, setSelectedDate } = useApp();
   const [expandedRecordSections, setExpandedRecordSections] = useState<Set<string>>(new Set());
   const [nextMealOpen, setNextMealOpen] = useState(false);
+  const scrollRef = useRef<ScrollView>(null);
+  const dailyPlanY = useRef(0);
+  const assistantY = useRef(0);
   useEffect(() => {
     setExpandedRecordSections(new Set());
     setNextMealOpen(false);
@@ -84,8 +87,12 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (tab: RootTab) => 
     });
   };
 
+  const scrollSectionToTop = (sectionY: { current: number }) => {
+    setTimeout(() => scrollRef.current?.scrollTo({ y: Math.max(0, sectionY.current), animated: true }), 100);
+  };
+
   return (
-    <Screen>
+    <Screen scrollRef={scrollRef}>
       <Header
         eyebrow={`轻脂管家 · ${todayLabel}`}
         title={`你好，${profile.name}`}
@@ -124,7 +131,11 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (tab: RootTab) => 
         <MacroCard label="脂肪" value={summary.fat} goal={profile.fatGoal} unit="g" color={colors.orange} energyShare={macroShares.fat} />
       </View>
 
-      {isToday ? <DailyPlanCard /> : null}
+      {isToday ? (
+        <View onLayout={event => { dailyPlanY.current = event.nativeEvent.layout.y; }}>
+          <DailyPlanCard onExpand={() => scrollSectionToTop(dailyPlanY)} />
+        </View>
+      ) : null}
 
       {isToday && summary.calories > 0 && summary.carb < profile.carbGoal * 0.65 ? (
         <View style={[styles.carbHint, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -197,7 +208,9 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (tab: RootTab) => 
         </Card>
       )}
 
-      <AIAssistantCard />
+      <View onLayout={event => { assistantY.current = event.nativeEvent.layout.y; }}>
+        <AIAssistantCard onExpand={() => scrollSectionToTop(assistantY)} />
+      </View>
 
       <SectionTitle title="方便常备的减脂友好食物" action={<Text style={{ color: colors.textMuted, fontSize: 10 }}>左右滑动</Text>} />
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.foodTipsList}>
@@ -285,7 +298,7 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (tab: RootTab) => 
   );
 }
 
-function AIAssistantCard() {
+function AIAssistantCard({ onExpand }: { onExpand: () => void }) {
   const colors = useColors();
   const { token } = useAuth();
   const app = useApp();
@@ -378,10 +391,18 @@ function AIAssistantCard() {
     void loadHistory(type);
   };
 
+  const toggleAssistant = () => {
+    if (assistantOpen) setAssistantOpen(false);
+    else {
+      setAssistantOpen(true);
+      onExpand();
+    }
+  };
+
   const isLatest = Boolean(summaryRecord && context && summaryRecord.contextVersion === context.version);
   return (
     <Card style={styles.aiCard}>
-      <Pressable onPress={() => setAssistantOpen(value => !value)} style={styles.aiHeader} accessibilityLabel={`${assistantOpen ? '收起' : '展开'}AI智能营养助手`}>
+      <Pressable onPress={toggleAssistant} style={styles.aiHeader} accessibilityLabel={`${assistantOpen ? '收起' : '展开'}AI智能营养助手`}>
         <View style={[styles.recommendIcon, { backgroundColor: colors.primarySoft }]}><Ionicons name="sparkles" size={18} color={colors.primary} /></View>
         <View style={{ flex: 1 }}>
           <Text style={[styles.aiTitle, { color: colors.text }]}>AI智能营养助手</Text>
@@ -449,7 +470,7 @@ function AIAssistantCard() {
   );
 }
 
-function DailyPlanCard() {
+function DailyPlanCard({ onExpand }: { onExpand: () => void }) {
   const colors = useColors();
   const { token } = useAuth();
   const app = useApp();
@@ -489,9 +510,17 @@ function DailyPlanCard() {
     void loadOrGenerate(false);
   }, [token, app.profile?.updatedAt]);
 
+  const toggleOpen = () => {
+    if (open) setOpen(false);
+    else {
+      setOpen(true);
+      onExpand();
+    }
+  };
+
   return (
     <Card style={[styles.dailyPlanCard, { backgroundColor: colors.surface }]}>
-      <Pressable onPress={() => setOpen(value => !value)} style={styles.aiHeader} accessibilityLabel={`${open ? '收起' : '展开'}今日推荐方案`}>
+      <Pressable onPress={toggleOpen} style={styles.aiHeader} accessibilityLabel={`${open ? '收起' : '展开'}今日推荐方案`}>
         <View style={[styles.recommendIcon, { backgroundColor: colors.primarySoft }]}><Ionicons name="calendar-outline" size={18} color={colors.primary} /></View>
         <View style={{ flex: 1 }}>
           <Text style={[styles.aiTitle, { color: colors.text }]}>今日推荐方案</Text>

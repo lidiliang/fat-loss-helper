@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
-import { useEffect, useMemo, useState } from 'react';
-import { Alert, Linking, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Linking, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { AppText, Card, Chip, Field, Header, PrimaryButton, Screen, SectionTitle } from '../components/ui';
 import { ACTIVITY_LEVELS, FATTY_LIVER_LEVELS } from '../data/seed';
 import { calculateGoals } from '../lib/calculations';
@@ -28,6 +28,8 @@ export function SettingsScreen() {
   const [backupLoading, setBackupLoading] = useState(false);
   const [restoreLoading, setRestoreLoading] = useState(false);
   const [syncStatus, setSyncStatus] = useState<{ dirty: number; lastBackupAt: string | null; lastError: string | null } | null>(null);
+  const scrollRef = useRef<ScrollView>(null);
+  const reminderY = useRef(0);
 
   const refreshStatus = () => {
     if (user) getSyncStatus(user.id).then(setSyncStatus).catch(() => undefined);
@@ -64,11 +66,15 @@ export function SettingsScreen() {
     ],
   );
 
+  const scrollReminderToTop = () => {
+    setTimeout(() => scrollRef.current?.scrollTo({ y: Math.max(0, reminderY.current), animated: true }), 100);
+  };
+
   if (!profile || !app.reminders || !user) return null;
   const lastBackup = syncStatus?.lastBackupAt ? new Date(syncStatus.lastBackupAt).toLocaleString('zh-CN') : '尚未完成备份';
 
   return (
-    <Screen>
+    <Screen scrollRef={scrollRef}>
       <Header eyebrow="我的" title="设置与数据" subtitle="目标、提醒和备份都由你掌控。" />
 
       <Card style={styles.accountCard}>
@@ -90,8 +96,10 @@ export function SettingsScreen() {
         </View>
       )}
 
-      <SectionTitle title="本地提醒" />
-      <ReminderEditor settings={app.reminders} />
+      <View style={styles.reminderSection} onLayout={event => { reminderY.current = event.nativeEvent.layout.y; }}>
+        <SectionTitle title="本地提醒" />
+        <ReminderEditor settings={app.reminders} onExpand={scrollReminderToTop} />
+      </View>
 
       <SectionTitle title="数据备份" />
       <Card style={{ gap: 15 }}>
@@ -190,7 +198,7 @@ function ProfileEditor({ onDone }: { onDone: () => void }) {
   );
 }
 
-function ReminderEditor({ settings }: { settings: ReminderSettings }) {
+function ReminderEditor({ settings, onExpand }: { settings: ReminderSettings; onExpand: () => void }) {
   const colors = useColors();
   const app = useApp();
   const [draft, setDraft] = useState(settings);
@@ -295,9 +303,16 @@ function ReminderEditor({ settings }: { settings: ReminderSettings }) {
     : configuredTimes.length
       ? `${configuredTimes.map(([label, time]) => `${label} ${time.trim()}`).join(' · ')}${diagnostics ? ` · 系统已安排 ${diagnostics.scheduledCount} 条` : ''}`
       : '已开启 · 尚未填写具体提醒时间';
+  const toggleOpen = () => {
+    if (open) setOpen(false);
+    else {
+      setOpen(true);
+      onExpand();
+    }
+  };
   return (
     <Card style={{ gap: 11, padding: 14 }}>
-      <Pressable onPress={() => setOpen(value => !value)} style={styles.reliabilityHeader} accessibilityLabel={`${open ? '收起' : '展开'}本地提醒设置`}>
+      <Pressable onPress={toggleOpen} style={styles.reliabilityHeader} accessibilityLabel={`${open ? '收起' : '展开'}本地提醒设置`}>
         <View style={[styles.settingIcon, { backgroundColor: colors.primarySoft }]}><Ionicons name="notifications-outline" size={20} color={colors.primary} /></View>
         <View style={{ flex: 1 }}>
           <Text style={[styles.settingTitle, { color: colors.text }]}>{draft.enabled ? '提醒已开启' : '提醒已关闭'}</Text>
@@ -372,6 +387,7 @@ function fattyLiverLabel(level: FattyLiverLevel) {
 }
 
 const styles = StyleSheet.create({
+  reminderSection: { gap: 18 },
   accountCard: { flexDirection: 'row', alignItems: 'center', gap: 13 },
   accountAvatar: { width: 50, height: 50, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   accountName: { fontSize: 17, fontWeight: '900' },
