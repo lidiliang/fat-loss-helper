@@ -381,10 +381,10 @@ function AIAssistantCard() {
   const isLatest = Boolean(summaryRecord && context && summaryRecord.contextVersion === context.version);
   return (
     <Card style={styles.aiCard}>
-      <Pressable onPress={() => setAssistantOpen(value => !value)} style={styles.aiHeader} accessibilityLabel={`${assistantOpen ? '收起' : '展开'}DeepSeek营养助手`}>
+      <Pressable onPress={() => setAssistantOpen(value => !value)} style={styles.aiHeader} accessibilityLabel={`${assistantOpen ? '收起' : '展开'}AI智能营养助手`}>
         <View style={[styles.recommendIcon, { backgroundColor: colors.primarySoft }]}><Ionicons name="sparkles" size={18} color={colors.primary} /></View>
         <View style={{ flex: 1 }}>
-          <Text style={[styles.aiTitle, { color: colors.text }]}>DeepSeek 营养助手</Text>
+          <Text style={[styles.aiTitle, { color: colors.text }]}>AI智能营养助手</Text>
           <Text style={[styles.aiMeta, { color: colors.textMuted }]}>当日总结与问答会永久保存在服务端{remaining === null ? '' : ` · 今日剩余 ${remaining}/50 次`}</Text>
         </View>
         <Ionicons name={assistantOpen ? 'chevron-up' : 'chevron-down'} size={19} color={colors.textMuted} />
@@ -407,7 +407,7 @@ function AIAssistantCard() {
         ))}
       </View>
       <Field label="你的问题" value={question} onChangeText={setQuestion} placeholder="例如：今晚还能喝一杯脱脂牛奶吗？" multiline />
-      <PrimaryButton label="发送给 DeepSeek" onPress={ask} loading={asking} disabled={!question.trim()} />
+      <PrimaryButton label="发送给 AI 营养助手" onPress={ask} loading={asking} disabled={!question.trim()} />
       {answer ? <View style={[styles.aiAnswer, { backgroundColor: colors.primarySoft }]}><MarkdownText value={answer} /></View> : null}
       <View style={[styles.miniDivider, { backgroundColor: colors.border }]} />
       <Pressable onPress={toggleHistory} style={styles.historyToggle}>
@@ -491,10 +491,10 @@ function DailyPlanCard() {
 
   return (
     <Card style={[styles.dailyPlanCard, { backgroundColor: colors.surface }]}>
-      <Pressable onPress={() => setOpen(value => !value)} style={styles.aiHeader} accessibilityLabel={`${open ? '收起' : '展开'}今日控制方案`}>
+      <Pressable onPress={() => setOpen(value => !value)} style={styles.aiHeader} accessibilityLabel={`${open ? '收起' : '展开'}今日推荐方案`}>
         <View style={[styles.recommendIcon, { backgroundColor: colors.primarySoft }]}><Ionicons name="calendar-outline" size={18} color={colors.primary} /></View>
         <View style={{ flex: 1 }}>
-          <Text style={[styles.aiTitle, { color: colors.text }]}>今日控制方案</Text>
+          <Text style={[styles.aiTitle, { color: colors.text }]}>今日推荐方案</Text>
           <Text style={[styles.aiMeta, { color: colors.textMuted }]}>根据昨天与前天的饮食、运动记录生成 · 每日自动一次</Text>
         </View>
         <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={19} color={colors.textMuted} />

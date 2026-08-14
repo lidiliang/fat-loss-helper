@@ -140,7 +140,7 @@ export function RecordScreen() {
               <Card key={template.id} style={styles.templateCard}>
                 <View style={[styles.templateIcon, { backgroundColor: colors.primarySoft }]}><Text style={{ fontSize: 20 }}>🥗</Text></View>
                 <Pressable onPress={() => setEditingTemplate(template)} style={{ flex: 1 }} accessibilityLabel={`查看或编辑${template.name}`}>
-                  <Text style={[styles.templateName, { color: colors.text }]}>{template.name}</Text>
+                  <Text numberOfLines={1} style={[styles.templateName, { color: colors.text }]}>{template.name}</Text>
                   <Text numberOfLines={1} style={[styles.templateDescription, { color: colors.textMuted }]}>{template.description}</Text>
                 </Pressable>
                 <View style={styles.templateActions}>
@@ -200,6 +200,7 @@ export function RecordScreen() {
                 </View>
               ))}
             </Card>
+            {query.trim() && visibleFoods.length === 1 ? <View style={styles.searchResultSpacer} /> : null}
           </View>
 
           <View onLayout={event => { historyY.current = event.nativeEvent.layout.y; }}>
@@ -329,14 +330,14 @@ function MealHistory({ mealType }: { mealType: MealType }) {
   };
   const completeDinner = () => {
     if (!token || !app.profile) return Alert.alert('请先登录');
-    Alert.alert('完成晚餐并生成总结？', '会将今天必要的健康档案、饮食与运动数据发送给 DeepSeek，结果永久保存在服务端。', [
+    Alert.alert('完成晚餐并生成总结？', '会将今天必要的健康档案、饮食与运动数据发送给 AI 智能营养助手，结果永久保存在服务端。', [
       { text: '取消', style: 'cancel' },
       { text: '同意并生成', onPress: async () => {
         setAILoading(true);
         try {
           const context = buildAIDailyContext({ date: app.selectedDate, profile: app.profile!, summary: app.summary, meals: app.meals, exercises: app.exercises });
           await generateDailyAISummary(token, context);
-          Alert.alert('今日总结已生成', '可前往首页的“DeepSeek 营养助手”查看。');
+          Alert.alert('今日总结已生成', '可前往首页的“AI智能营养助手”查看。');
         } catch (error) {
           Alert.alert('无法生成总结', error instanceof Error ? error.message : '请稍后重试');
         } finally {
@@ -668,7 +669,7 @@ function CustomFoodModal({ visible, onClose }: { visible: boolean; onClose: () =
         </View>
         <Field label="食物名称" value={name} onChangeText={setName} placeholder="例如：自制杂粮饼" />
         <Field label="品牌、包装或烹饪方式（可选）" value={description} onChangeText={setDescription} placeholder="例如：每袋240克、清蒸、无糖" multiline />
-        <PrimaryButton label="让 DeepSeek 估算并填入" onPress={estimateWithAI} loading={estimating} secondary />
+        <PrimaryButton label="让 AI 智能估算并填入" onPress={estimateWithAI} loading={estimating} secondary />
         {estimate ? (
           <View style={[styles.aiEstimate, { backgroundColor: colors.primarySoft }]}>
             <Text style={[styles.aiEstimateTitle, { color: colors.primaryDark }]}>AI 估算 · 置信度 {estimate.confidence === 'high' ? '高' : estimate.confidence === 'medium' ? '中' : '低'}</Text>
@@ -697,16 +698,17 @@ const styles = StyleSheet.create({
   dateText: { fontSize: 14, fontWeight: '800' },
   dateHint: { fontSize: 9, marginTop: 2 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  templateCard: { width: 270, padding: 13, borderRadius: 18, flexDirection: 'row', alignItems: 'center', gap: 11 },
-  templateList: { gap: 10, paddingRight: 4 },
-  templateIcon: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  templateName: { fontSize: 14, fontWeight: '800' },
-  templateDescription: { fontSize: 10, marginTop: 3 },
-  templateActions: { flexDirection: 'row', alignItems: 'center', gap: 2 },
-  templateDelete: { width: 30, height: 35, alignItems: 'center', justifyContent: 'center' },
-  roundAdd: { width: 35, height: 35, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  templateCard: { width: 250, padding: 10, borderRadius: 16, flexDirection: 'row', alignItems: 'center', gap: 7 },
+  templateList: { gap: 8, paddingRight: 4 },
+  templateIcon: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  templateName: { fontSize: 13, fontWeight: '800' },
+  templateDescription: { fontSize: 9.5, marginTop: 2 },
+  templateActions: { flexDirection: 'row', alignItems: 'center' },
+  templateDelete: { width: 26, height: 31, alignItems: 'center', justifyContent: 'center' },
+  roundAdd: { width: 31, height: 31, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   search: { flexDirection: 'row', alignItems: 'center', paddingLeft: 14, borderWidth: 1, borderRadius: 17 },
   searchSection: { gap: 12 },
+  searchResultSpacer: { height: 134 },
   sectionActions: { flexDirection: 'row', alignItems: 'center', gap: 13 },
   foodRow: { minHeight: 67, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, gap: 10 },
   foodName: { fontSize: 13, fontWeight: '800' },
