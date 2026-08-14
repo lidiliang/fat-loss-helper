@@ -1,5 +1,5 @@
-import { useMemo } from 'react';
-import { Pressable, ScrollView, Share, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { useMemo, useState } from 'react';
+import { Modal, Pressable, ScrollView, Share, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import Svg, { Circle, Line, Polyline, Text as SvgText } from 'react-native-svg';
 import { Card, EmptyState, Header, ProgressBar, Screen, SectionTitle } from '../components/ui';
 import { useApp } from '../context/AppContext';
@@ -9,6 +9,7 @@ export function TrendsScreen() {
   const colors = useColors();
   const { width } = useWindowDimensions();
   const { profile, weights, dailyIntakes } = useApp();
+  const [shareOpen, setShareOpen] = useState(false);
   if (!profile) return null;
   const chartWidth = Math.max(260, width - 78);
   const ordered = [...weights].reverse().slice(-14);
@@ -21,11 +22,11 @@ export function TrendsScreen() {
   const achievements = buildAchievements(oldest?.weightKg ?? profile.weightKg, profile.targetWeightKg, profile.calorieGoal, dailyIntakes, weights);
   const unlockedCount = achievements.filter(item => item.unlocked).length;
 
-  const shareProgress = () => {
+  const shareProgressText = () => {
     const changeText = weights.length > 1
       ? `阶段体重变化 ${weightChange > 0 ? '+' : ''}${weightChange.toFixed(1)} kg，`
       : '';
-    void Share.share({
+    return Share.share({
       message: `我正在用轻脂管家坚持健康减脂：${changeText}近30个记录日达标率 ${complianceRate}%，已解锁 ${unlockedCount}/${achievements.length} 个减脂里程碑。一起稳稳坚持！`,
     });
   };
@@ -80,9 +81,22 @@ export function TrendsScreen() {
           </View>
         ))}
       </ScrollView>
-      <Pressable onPress={shareProgress} style={({ pressed }) => [styles.shareButton, { backgroundColor: colors.surface, borderColor: colors.primary, opacity: pressed ? 0.7 : 1 }]}>
+      <Pressable onPress={() => setShareOpen(true)} style={({ pressed }) => [styles.shareButton, { backgroundColor: colors.surface, borderColor: colors.primary, opacity: pressed ? 0.7 : 1 }]}>
         <Text style={[styles.shareButtonText, { color: colors.primaryDark }]}>分享我的阶段成绩</Text>
       </Pressable>
+
+      <ShareCardModal
+        visible={shareOpen}
+        onClose={() => setShareOpen(false)}
+        onShareText={() => void shareProgressText()}
+        latestWeight={latest?.weightKg}
+        targetWeight={profile.targetWeightKg}
+        weightChange={weightChange}
+        complianceRate={complianceRate}
+        unlockedCount={unlockedCount}
+        totalAchievements={achievements.length}
+        achievements={achievements}
+      />
 
       <SectionTitle title="阶段提示" />
       <Card style={{ gap: 10 }}>
@@ -91,6 +105,73 @@ export function TrendsScreen() {
       </Card>
     </Screen>
   );
+}
+
+function ShareCardModal({
+  visible,
+  onClose,
+  onShareText,
+  latestWeight,
+  targetWeight,
+  weightChange,
+  complianceRate,
+  unlockedCount,
+  totalAchievements,
+  achievements,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onShareText: () => void;
+  latestWeight?: number;
+  targetWeight: number;
+  weightChange: number;
+  complianceRate: number;
+  unlockedCount: number;
+  totalAchievements: number;
+  achievements: Achievement[];
+}) {
+  const colors = useColors();
+  const unlockedNames = achievements.filter(item => item.unlocked).slice(-3);
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.shareModalBackdrop}>
+        <View style={styles.shareModalContent}>
+          <View style={[styles.shareCard, { backgroundColor: colors.primaryDark }]}>
+            <View style={styles.shareCardTopline}>
+              <Text style={styles.shareCardBrand}>轻脂管家</Text>
+              <Text style={styles.shareCardLeaf}>✦</Text>
+            </View>
+            <Text style={styles.shareCardEyebrow}>MY HEALTHY CUT</Text>
+            <Text style={styles.shareCardTitle}>稳稳变轻，持续向前</Text>
+            <View style={styles.shareCardHero}>
+              <Text style={styles.shareCardHeroNumber}>{complianceRate}<Text style={styles.shareCardHeroUnit}>%</Text></Text>
+              <Text style={styles.shareCardHeroLabel}>近30天摄入达标率</Text>
+            </View>
+            <View style={styles.shareCardStats}>
+              <ShareStat label="当前体重" value={latestWeight === undefined ? '—' : `${latestWeight.toFixed(1)} kg`} />
+              <ShareStat label="目标体重" value={`${targetWeight.toFixed(1)} kg`} />
+              <ShareStat label="阶段变化" value={latestWeight === undefined ? '—' : `${weightChange > 0 ? '+' : ''}${weightChange.toFixed(1)} kg`} />
+            </View>
+            <View style={styles.shareCardMilestone}>
+              <Text style={styles.shareCardMilestoneLabel}>减脂里程碑</Text>
+              <Text style={styles.shareCardMilestoneCount}>{unlockedCount}<Text style={styles.shareCardMilestoneTotal}> / {totalAchievements} 已解锁</Text></Text>
+              <Text style={styles.shareCardMilestoneNames}>{unlockedNames.length ? unlockedNames.map(item => `${item.emoji} ${item.name}`).join('　') : '从今天的第一条记录开始'}</Text>
+            </View>
+            <Text style={styles.shareCardFooter}>不追求完美，只把今天做好一点。</Text>
+          </View>
+          <Text style={[styles.shareModalHint, { color: colors.textMuted }]}>可直接截屏保存这张阶段成绩卡片</Text>
+          <View style={styles.shareModalActions}>
+            <View style={{ flex: 1 }}><Pressable onPress={onClose} style={[styles.shareModalButton, { borderColor: colors.border }]}><Text style={{ color: colors.textMuted, fontWeight: '800' }}>关闭</Text></Pressable></View>
+            <View style={{ flex: 1 }}><Pressable onPress={onShareText} style={[styles.shareModalButton, { backgroundColor: colors.primary, borderColor: colors.primary }]}><Text style={{ color: colors.white, fontWeight: '800' }}>分享文字</Text></Pressable></View>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function ShareStat({ label, value }: { label: string; value: string }) {
+  return <View style={styles.shareStat}><Text style={styles.shareStatLabel}>{label}</Text><Text style={styles.shareStatValue}>{value}</Text></View>;
 }
 
 interface Achievement {
@@ -117,7 +198,7 @@ function buildAchievements(startWeight: number, targetWeight: number, calorieGoa
     { id: 'first-log', emoji: '🌱', name: '第一步', detail: '完成第1个饮食记录日', progress: `${Math.min(recordDays, 1)}/1 天`, unlocked: recordDays >= 1 },
     { id: 'streak-3', emoji: '🔥', name: '连续行动', detail: '连续3天记录饮食', progress: `${Math.min(bestStreak, 3)}/3 天`, unlocked: bestStreak >= 3 },
     { id: 'streak-7', emoji: '🏅', name: '一周坚持', detail: '连续7天记录饮食', progress: `${Math.min(bestStreak, 7)}/7 天`, unlocked: bestStreak >= 7 },
-    { id: 'compliant-7', emoji: '🎯', name: '稳稳控量', detail: '累计7个摄入达标日', progress: `${Math.min(compliantDays, 7)}/7 天`, unlocked: compliantDays >= 7 },
+    { id: 'compliant-14', emoji: '🎯', name: '稳稳控量', detail: '累计14个摄入达标日', progress: `${Math.min(compliantDays, 14)}/14 天`, unlocked: compliantDays >= 14 },
     { id: 'record-14', emoji: '🗓️', name: '记录成习惯', detail: '累计完成14个饮食记录日', progress: `${Math.min(recordDays, 14)}/14 天`, unlocked: recordDays >= 14 },
     { id: 'near-target', emoji: '🏁', name: '目标在望', detail: '完成超过90%的目标减重进度', progress: latest === undefined ? '先记录体重' : `已完成 ${Math.floor(goalProgress)}%`, unlocked: goalProgress > 90 },
   ];
@@ -201,6 +282,31 @@ const styles = StyleSheet.create({
   achievementProgress: { fontSize: 10.5, fontWeight: '800', marginTop: 10 },
   shareButton: { minHeight: 45, borderRadius: 15, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   shareButtonText: { fontSize: 12, fontWeight: '900' },
+  shareModalBackdrop: { flex: 1, backgroundColor: '#0B1711CC', alignItems: 'center', justifyContent: 'center', padding: 20 },
+  shareModalContent: { width: '100%', maxWidth: 380, alignItems: 'center', gap: 11 },
+  shareCard: { width: '100%', borderRadius: 28, padding: 23, overflow: 'hidden' },
+  shareCardTopline: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  shareCardBrand: { color: '#E8F5EC', fontSize: 13, fontWeight: '900', letterSpacing: 1.5 },
+  shareCardLeaf: { color: '#A9E4BD', fontSize: 24, fontWeight: '900' },
+  shareCardEyebrow: { color: '#9AD4AF', fontSize: 9, fontWeight: '800', letterSpacing: 2, marginTop: 29 },
+  shareCardTitle: { color: '#FFFFFF', fontSize: 24, fontWeight: '900', marginTop: 5 },
+  shareCardHero: { marginTop: 23, alignItems: 'center' },
+  shareCardHeroNumber: { color: '#FFFFFF', fontSize: 65, lineHeight: 72, fontWeight: '900', letterSpacing: -2 },
+  shareCardHeroUnit: { fontSize: 25, letterSpacing: 0 },
+  shareCardHeroLabel: { color: '#BFE8CB', fontSize: 11, fontWeight: '700', marginTop: 1 },
+  shareCardStats: { flexDirection: 'row', gap: 7, marginTop: 24 },
+  shareStat: { flex: 1, minHeight: 61, borderRadius: 15, padding: 9, backgroundColor: '#FFFFFF18', justifyContent: 'center' },
+  shareStatLabel: { color: '#BFE8CB', fontSize: 9 },
+  shareStatValue: { color: '#FFFFFF', fontSize: 13, fontWeight: '900', marginTop: 4 },
+  shareCardMilestone: { marginTop: 20, paddingTop: 15, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#FFFFFF3D' },
+  shareCardMilestoneLabel: { color: '#BFE8CB', fontSize: 10, fontWeight: '700' },
+  shareCardMilestoneCount: { color: '#FFFFFF', fontSize: 25, fontWeight: '900', marginTop: 3 },
+  shareCardMilestoneTotal: { color: '#BFE8CB', fontSize: 11, fontWeight: '700' },
+  shareCardMilestoneNames: { color: '#E8F5EC', fontSize: 10.5, marginTop: 7 },
+  shareCardFooter: { color: '#BFE8CB', fontSize: 10.5, marginTop: 23, textAlign: 'center' },
+  shareModalHint: { fontSize: 10.5, fontWeight: '700' },
+  shareModalActions: { width: '100%', flexDirection: 'row', gap: 10 },
+  shareModalButton: { minHeight: 45, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   insightTitle: { fontSize: 15, fontWeight: '800', lineHeight: 22 },
   insightBody: { fontSize: 12, lineHeight: 19 },
 });
