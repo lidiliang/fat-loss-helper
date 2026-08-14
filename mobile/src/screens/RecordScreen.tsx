@@ -34,6 +34,7 @@ export function RecordScreen() {
   const [editingTemplate, setEditingTemplate] = useState<MealTemplate | null>(null);
   const [foodsExpanded, setFoodsExpanded] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
+  const searchY = useRef(0);
   const historyY = useRef(0);
 
   const moveDate = (days: number) => {
@@ -50,6 +51,10 @@ export function RecordScreen() {
 
   const scrollToHistory = () => {
     setTimeout(() => scrollRef.current?.scrollTo({ y: Math.max(0, historyY.current - 12), animated: true }), 120);
+  };
+
+  const revealSearchResults = () => {
+    setTimeout(() => scrollRef.current?.scrollTo({ y: Math.max(0, searchY.current - 10), animated: true }), 180);
   };
 
   const confirmAddTemplate = (template: MealTemplate) => {
@@ -153,47 +158,49 @@ export function RecordScreen() {
             ))}
           </ScrollView>
 
-          <SectionTitle
-            title="搜索食物"
-            action={<View style={styles.sectionActions}>
-              {!query.trim() && filteredFoods.length > 4 ? <Pressable onPress={() => setFoodsExpanded(value => !value)}><Text style={{ color: colors.textMuted, fontWeight: '700', fontSize: 11 }}>{foodsExpanded ? '收起' : '显示更多'}</Text></Pressable> : null}
-              <Pressable onPress={() => setCustomFoodOpen(true)}><Text style={{ color: colors.primary, fontWeight: '800', fontSize: 12 }}>＋ 自定义</Text></Pressable>
-            </View>}
-          />
-          <View style={[styles.search, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Ionicons name="search" size={18} color={colors.textMuted} />
-            <Field value={query} onChangeText={setQuery} placeholder="米饭、鸡胸肉、苹果…" />
-          </View>
-          <Card style={{ padding: 0, overflow: 'hidden' }}>
-            {!visibleFoods.length ? <EmptyState icon="🔎" title="没有找到食物" detail="换个关键词，或添加自定义食物。" /> : visibleFoods.map((food, index) => (
-              <View key={food.id} style={[styles.foodRow, index < visibleFoods.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }]}>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.foodName, { color: colors.text }]}>{food.name}{food.ownerId ? <Text style={{ color: colors.primary, fontSize: 9 }}>  自定义</Text> : null}</Text>
-                  <Text style={[styles.foodNutrition, { color: colors.textMuted }]}>
-                    {food.calories} kcal · 蛋白质 {food.protein}g · 脂肪 {food.fat}g / 100{measureLabels(food).short}
-                    {food.servings?.length ? ` · ${food.servings[0].label}≈${servingAmount(food.servings[0])}${measureLabels(food).short}` : ''}
-                  </Text>
-                </View>
-                <View style={styles.foodActions}>
-                  {food.ownerId ? (
-                    <Pressable
-                      hitSlop={8}
-                      onPress={() => Alert.alert('删除自定义食物？', `“${food.name}”将从食物库移除，既往饮食记录会保留。`, [
-                        { text: '取消', style: 'cancel' },
-                        { text: '删除', style: 'destructive', onPress: () => app.deleteCustomFood(food.id).catch(error => Alert.alert('删除失败', error.message)) },
-                      ])}
-                      style={styles.foodDelete}
-                    >
-                      <Ionicons name="trash-outline" size={17} color={colors.textMuted} />
+          <View style={styles.searchSection} onLayout={event => { searchY.current = event.nativeEvent.layout.y; }}>
+            <SectionTitle
+              title="搜索食物"
+              action={<View style={styles.sectionActions}>
+                {!query.trim() && filteredFoods.length > 4 ? <Pressable onPress={() => setFoodsExpanded(value => !value)}><Text style={{ color: colors.textMuted, fontWeight: '700', fontSize: 11 }}>{foodsExpanded ? '收起' : '显示更多'}</Text></Pressable> : null}
+                <Pressable onPress={() => setCustomFoodOpen(true)}><Text style={{ color: colors.primary, fontWeight: '800', fontSize: 12 }}>＋ 自定义</Text></Pressable>
+              </View>}
+            />
+            <View style={[styles.search, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Ionicons name="search" size={18} color={colors.textMuted} />
+              <Field value={query} onChangeText={setQuery} onFocus={revealSearchResults} placeholder="米饭、鸡胸肉、苹果…" />
+            </View>
+            <Card style={{ padding: 0, overflow: 'hidden' }}>
+              {!visibleFoods.length ? <EmptyState icon="🔎" title="没有找到食物" detail="换个关键词，或添加自定义食物。" /> : visibleFoods.map((food, index) => (
+                <View key={food.id} style={[styles.foodRow, index < visibleFoods.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.foodName, { color: colors.text }]}>{food.name}{food.ownerId ? <Text style={{ color: colors.primary, fontSize: 9 }}>  自定义</Text> : null}</Text>
+                    <Text style={[styles.foodNutrition, { color: colors.textMuted }]}>
+                      {food.calories} kcal · 蛋白质 {food.protein}g · 脂肪 {food.fat}g / 100{measureLabels(food).short}
+                      {food.servings?.length ? ` · ${food.servings[0].label}≈${servingAmount(food.servings[0])}${measureLabels(food).short}` : ''}
+                    </Text>
+                  </View>
+                  <View style={styles.foodActions}>
+                    {food.ownerId ? (
+                      <Pressable
+                        hitSlop={8}
+                        onPress={() => Alert.alert('删除自定义食物？', `“${food.name}”将从食物库移除，既往饮食记录会保留。`, [
+                          { text: '取消', style: 'cancel' },
+                          { text: '删除', style: 'destructive', onPress: () => app.deleteCustomFood(food.id).catch(error => Alert.alert('删除失败', error.message)) },
+                        ])}
+                        style={styles.foodDelete}
+                      >
+                        <Ionicons name="trash-outline" size={17} color={colors.textMuted} />
+                      </Pressable>
+                    ) : null}
+                    <Pressable onPress={() => setSelectedFood(food)} style={[styles.foodAdd, { backgroundColor: colors.primarySoft }]}>
+                      <Ionicons name="add" size={20} color={colors.primaryDark} />
                     </Pressable>
-                  ) : null}
-                  <Pressable onPress={() => setSelectedFood(food)} style={[styles.foodAdd, { backgroundColor: colors.primarySoft }]}>
-                    <Ionicons name="add" size={20} color={colors.primaryDark} />
-                  </Pressable>
+                  </View>
                 </View>
-              </View>
-            ))}
-          </Card>
+              ))}
+            </Card>
+          </View>
 
           <View onLayout={event => { historyY.current = event.nativeEvent.layout.y; }}>
             <MealHistory mealType={mealType} />
@@ -699,6 +706,7 @@ const styles = StyleSheet.create({
   templateDelete: { width: 30, height: 35, alignItems: 'center', justifyContent: 'center' },
   roundAdd: { width: 35, height: 35, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   search: { flexDirection: 'row', alignItems: 'center', paddingLeft: 14, borderWidth: 1, borderRadius: 17 },
+  searchSection: { gap: 12 },
   sectionActions: { flexDirection: 'row', alignItems: 'center', gap: 13 },
   foodRow: { minHeight: 67, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, gap: 10 },
   foodName: { fontSize: 13, fontWeight: '800' },

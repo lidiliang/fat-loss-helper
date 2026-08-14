@@ -42,25 +42,25 @@ export function AppText({ children, style, muted = false }: { children: ReactNod
   return <Text style={[{ color: muted ? colors.textMuted : colors.text }, style]}>{children}</Text>;
 }
 
-export function Header({ eyebrow, title, subtitle, right }: { eyebrow?: string; title: string; subtitle?: string; right?: ReactNode }) {
+export function Header({ eyebrow, title, subtitle, right, compact = false }: { eyebrow?: string; title: string; subtitle?: string; right?: ReactNode; compact?: boolean }) {
   const colors = useColors();
   return (
-    <View style={styles.headerRow}>
+    <View style={[styles.headerRow, compact && styles.headerRowCompact]}>
       <View style={{ flex: 1 }}>
-        {eyebrow ? <Text style={[styles.eyebrow, { color: colors.primary }]}>{eyebrow}</Text> : null}
-        <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
-        {subtitle ? <Text style={[styles.subtitle, { color: colors.textMuted }]}>{subtitle}</Text> : null}
+        {eyebrow ? <Text style={[styles.eyebrow, compact && styles.eyebrowCompact, { color: colors.primary }]}>{eyebrow}</Text> : null}
+        <Text style={[styles.title, compact && styles.titleCompact, { color: colors.text }]}>{title}</Text>
+        {subtitle ? <Text style={[styles.subtitle, compact && styles.subtitleCompact, { color: colors.textMuted }]}>{subtitle}</Text> : null}
       </View>
       {right}
     </View>
   );
 }
 
-export function SectionTitle({ title, action }: { title: string; action?: ReactNode }) {
+export function SectionTitle({ title, action, compact = false }: { title: string; action?: ReactNode; compact?: boolean }) {
   const colors = useColors();
   return (
     <View style={styles.sectionRow}>
-      <Text style={[styles.sectionTitle, { color: colors.text }]}>{title}</Text>
+      <Text style={[styles.sectionTitle, compact && styles.sectionTitleCompact, { color: colors.text }]}>{title}</Text>
       {action}
     </View>
   );
@@ -88,9 +88,9 @@ export function PrimaryButton({ label, onPress, disabled, loading, secondary = f
   );
 }
 
-export function Field({ label, value, onChangeText, placeholder, keyboardType = 'default', secureTextEntry, suffix, multiline }: {
+export function Field({ label, value, onChangeText, placeholder, keyboardType = 'default', secureTextEntry, suffix, multiline, onFocus }: {
   label?: string; value: string; onChangeText: (value: string) => void; placeholder?: string;
-  keyboardType?: KeyboardTypeOptions; secureTextEntry?: boolean; suffix?: string; multiline?: boolean;
+  keyboardType?: KeyboardTypeOptions; secureTextEntry?: boolean; suffix?: string; multiline?: boolean; onFocus?: () => void;
 }) {
   const colors = useColors();
   return (
@@ -105,6 +105,7 @@ export function Field({ label, value, onChangeText, placeholder, keyboardType = 
           keyboardType={keyboardType}
           secureTextEntry={secureTextEntry}
           multiline={multiline}
+          onFocus={onFocus}
           style={[styles.input, { color: colors.text }, multiline && { minHeight: 76, textAlignVertical: 'top' }]}
         />
         {suffix ? <Text style={{ color: colors.textMuted, fontSize: 13 }}>{suffix}</Text> : null}
@@ -153,11 +154,16 @@ const styles = StyleSheet.create({
   screenContent: { paddingHorizontal: 20, paddingTop: 14, paddingBottom: 120, gap: 18 },
   card: { borderWidth: 1, borderRadius: 22, padding: 18 },
   headerRow: { flexDirection: 'row', alignItems: 'center', minHeight: 72 },
+  headerRowCompact: { minHeight: 54 },
   eyebrow: { fontSize: 12, letterSpacing: 1.5, fontWeight: '800', marginBottom: 6 },
+  eyebrowCompact: { fontSize: 10, marginBottom: 3 },
   title: { fontSize: 28, fontWeight: '800', letterSpacing: -0.7 },
+  titleCompact: { fontSize: 23 },
   subtitle: { fontSize: 13, marginTop: 7, lineHeight: 19 },
+  subtitleCompact: { fontSize: 11, marginTop: 3, lineHeight: 15 },
   sectionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   sectionTitle: { fontSize: 18, fontWeight: '800' },
+  sectionTitleCompact: { fontSize: 15 },
   button: { minHeight: 52, borderRadius: 16, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 20 },
   buttonCompact: { minHeight: 40, borderRadius: 13, paddingHorizontal: 15 },
   buttonText: { fontSize: 15, fontWeight: '800' },

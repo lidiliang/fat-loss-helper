@@ -17,7 +17,11 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (tab: RootTab) => 
   const colors = useColors();
   const { profile, foods, foodPreferences, meals, exercises, summary, selectedDate, reminders, addTemplate, setSelectedDate } = useApp();
   const [expandedRecordSections, setExpandedRecordSections] = useState<Set<string>>(new Set());
-  useEffect(() => setExpandedRecordSections(new Set()), [selectedDate]);
+  const [nextMealOpen, setNextMealOpen] = useState(false);
+  useEffect(() => {
+    setExpandedRecordSections(new Set());
+    setNextMealOpen(false);
+  }, [selectedDate]);
   if (!profile) return null;
 
   const plannedMealTypes: MealType[] = reminders?.snack.trim()
@@ -142,8 +146,8 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (tab: RootTab) => 
         </View>
       ) : null}
 
-      {isToday ? <Card style={{ gap: 14, backgroundColor: colors.primarySoft }}>
-        <View style={styles.recommendTitle}>
+      {isToday ? <Card style={[styles.nextMealCard, { backgroundColor: colors.primarySoft }]}>
+        <Pressable onPress={() => setNextMealOpen(value => !value)} style={styles.aiHeader} accessibilityLabel={`${nextMealOpen ? '收起' : '展开'}下一餐建议`}>
           <View style={[styles.recommendIcon, { backgroundColor: colors.surface }]}>
             <Ionicons name="sparkles" size={18} color={colors.primary} />
           </View>
@@ -151,7 +155,9 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (tab: RootTab) => 
             <Text style={[styles.recommendEyebrow, { color: colors.primaryDark }]}>下一餐建议</Text>
             <Text style={[styles.recommendBudget, { color: colors.text }]}>≤ {recommendation.calories} kcal · 蛋白质约 {recommendation.protein}g · 碳水约 {recommendation.carb}g</Text>
           </View>
-        </View>
+          <Ionicons name={nextMealOpen ? 'chevron-up' : 'chevron-down'} size={19} color={colors.textMuted} />
+        </Pressable>
+        {nextMealOpen ? <>
         <Text style={[styles.recommendText, { color: colors.text }]}>{recommendation.message}</Text>
         <Text style={[styles.limit, { color: colors.textMuted }]}>建议脂肪不超过 {recommendation.fat}g</Text>
         <View style={[styles.liverHint, { backgroundColor: colors.surface }]}>
@@ -183,6 +189,7 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (tab: RootTab) => 
         ) : (
           <Text style={[styles.miniEmpty, { color: colors.textMuted }]}>本餐剩余建议不足 80 kcal，先查看今天已记录的食物，避免重复添加。</Text>
         )}
+        </> : <Text style={[styles.aiCollapsedHint, { color: colors.primaryDark }]}>{MEAL_LABELS[nextMealType]} · 脂肪 ≤ {recommendation.fat}g · {miniMeals.length ? `${miniMeals.length} 套迷你套餐` : '当前预算较少'}</Text>}
       </Card> : (
         <Card style={{ gap: 8, backgroundColor: colors.primarySoft }}>
           <Text style={[styles.recommendEyebrow, { color: colors.primaryDark }]}>历史日期复盘</Text>
@@ -545,6 +552,7 @@ const styles = StyleSheet.create({
   recommendEyebrow: { fontSize: 11, fontWeight: '800' },
   recommendBudget: { fontSize: 15, fontWeight: '800', marginTop: 2 },
   recommendText: { fontSize: 13, lineHeight: 20 },
+  nextMealCard: { gap: 10, padding: 14 },
   limit: { fontSize: 11 },
   liverHint: { borderRadius: 13, padding: 11, flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   liverHintText: { flex: 1, fontSize: 10.5, lineHeight: 16 },

@@ -199,6 +199,7 @@ function ReminderEditor({ settings }: { settings: ReminderSettings }) {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [diagnostics, setDiagnostics] = useState<ReminderDiagnostics | null>(null);
+  const [open, setOpen] = useState(false);
   const [reliabilityOpen, setReliabilityOpen] = useState(false);
   const refreshDiagnostics = () => getReminderDiagnostics().then(setDiagnostics).catch(() => undefined);
   useEffect(() => {
@@ -281,10 +282,33 @@ function ReminderEditor({ settings }: { settings: ReminderSettings }) {
   const diagnosticText = !diagnostics
     ? '正在读取安卓提醒状态…'
     : `通知权限${diagnostics.permissionGranted ? '已开启' : '未开启'} · 系统已安排 ${diagnostics.scheduledCount} 条 · 通道${diagnostics.lockscreenVisible ? '允许锁屏显示' : '已隐藏锁屏内容'} · 声音${diagnostics.soundEnabled ? '已开启' : '未开启'} · 振动${diagnostics.vibrationEnabled ? '已开启' : '未开启'}`;
+  const reminderTimes: Array<[string, string]> = [
+    ['早餐', draft.breakfast],
+    ['午餐', draft.lunch],
+    ['晚餐', draft.dinner],
+    ['加餐', draft.snack],
+    ['运动', draft.exercise],
+  ];
+  const configuredTimes = reminderTimes.filter(([, time]) => Boolean(time.trim()));
+  const reminderSummary = !draft.enabled
+    ? '当前关闭 · 点击展开设置'
+    : configuredTimes.length
+      ? `${configuredTimes.map(([label, time]) => `${label} ${time.trim()}`).join(' · ')}${diagnostics ? ` · 系统已安排 ${diagnostics.scheduledCount} 条` : ''}`
+      : '已开启 · 尚未填写具体提醒时间';
   return (
     <Card style={{ gap: 11, padding: 14 }}>
-      <View style={styles.settingRow}>
+      <Pressable onPress={() => setOpen(value => !value)} style={styles.reliabilityHeader} accessibilityLabel={`${open ? '收起' : '展开'}本地提醒设置`}>
         <View style={[styles.settingIcon, { backgroundColor: colors.primarySoft }]}><Ionicons name="notifications-outline" size={20} color={colors.primary} /></View>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.settingTitle, { color: colors.text }]}>{draft.enabled ? '提醒已开启' : '提醒已关闭'}</Text>
+          <Text numberOfLines={2} style={[styles.settingDetail, { color: colors.textMuted }]}>{reminderSummary}</Text>
+        </View>
+        <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={19} color={colors.textMuted} />
+      </Pressable>
+      {open ? <>
+      <View style={[styles.divider, { backgroundColor: colors.border }]} />
+      <View style={styles.settingRow}>
+        <View style={[styles.settingIcon, { backgroundColor: colors.surfaceMuted }]}><Ionicons name="options-outline" size={20} color={colors.text} /></View>
         <View style={{ flex: 1 }}><Text style={[styles.settingTitle, { color: colors.text }]}>启用饮食与运动提醒</Text><Text style={[styles.settingDetail, { color: colors.textMuted }]}>餐前和运动提前量均可自定义</Text></View>
         <Switch value={draft.enabled} onValueChange={enabled => setDraft({ ...draft, enabled })} trackColor={{ false: colors.border, true: colors.primarySoft }} thumbColor={draft.enabled ? colors.primary : colors.textMuted} />
       </View>
@@ -333,6 +357,7 @@ function ReminderEditor({ settings }: { settings: ReminderSettings }) {
         </View>
         </> : null}
       </View>
+      </> : null}
     </Card>
   );
 }

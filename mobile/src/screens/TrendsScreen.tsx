@@ -13,7 +13,7 @@ export function TrendsScreen() {
   const { profile, weights, dailyIntakes } = useApp();
   const [shareOpen, setShareOpen] = useState(false);
   if (!profile) return null;
-  const chartWidth = Math.max(260, width - 78);
+  const chartWidth = Math.max(250, width - 58);
   const ordered = [...weights].reverse().slice(-14);
   const recentIntakes = dailyIntakes.slice(0, 30);
   const compliant = recentIntakes.filter(item => item.calories > 0 && item.calories <= profile.calorieGoal * 1.05).length;
@@ -25,29 +25,29 @@ export function TrendsScreen() {
   const unlockedCount = achievements.filter(item => item.unlocked).length;
 
   return (
-    <Screen>
-      <Header eyebrow="进展" title="趋势与复盘" subtitle="看长期方向，不被某一天的起伏影响。" />
+    <Screen style={styles.screen}>
+      <Header compact eyebrow="进展" title="趋势与复盘" subtitle="看长期方向，不被某一天的起伏影响。" />
       <View style={styles.statsRow}>
         <Stat label="最新体重" value={latest ? `${latest.weightKg.toFixed(1)} kg` : '暂无'} />
         <Stat label="累计变化" value={weights.length > 1 ? `${weightChange > 0 ? '+' : ''}${weightChange.toFixed(1)} kg` : '暂无'} accent={weightChange <= 0} />
         <Stat label="摄入达标" value={`${complianceRate}%`} accent />
       </View>
 
-      <SectionTitle title="体重趋势" action={<Text style={{ color: colors.textMuted, fontSize: 11 }}>最近 14 次记录</Text>} />
-      <Card>
+      <SectionTitle compact title="体重趋势" action={<Text style={{ color: colors.textMuted, fontSize: 9.5 }}>最近 14 次记录</Text>} />
+      <Card style={styles.compactCard}>
         {ordered.length < 2 ? <EmptyState icon="📈" title="还需要两次记录" detail="在记录页持续打卡体重，这里会生成变化曲线。" /> : (
           <LineChart data={ordered.map(item => item.weightKg)} labels={ordered.map(item => item.recordedDate.slice(5))} width={chartWidth} color={colors.primary} />
         )}
       </Card>
 
-      <SectionTitle title="近 30 天摄入达标率" />
-      <Card style={{ gap: 13 }}>
+      <SectionTitle compact title="近 30 天摄入达标率" />
+      <Card style={[styles.compactCard, { gap: 8 }]}>
         <View style={styles.complianceHeader}>
           <View>
             <Text style={[styles.complianceNumber, { color: colors.text }]}>{complianceRate}%</Text>
             <Text style={[styles.complianceDetail, { color: colors.textMuted }]}>{recentIntakes.length ? `${compliant}/${recentIntakes.length} 个记录日未超过目标的 105%` : '还没有饮食记录'}</Text>
           </View>
-          <View style={[styles.badge, { backgroundColor: colors.primarySoft }]}><Text style={{ color: colors.primaryDark, fontWeight: '800', fontSize: 11 }}>稳定比极端更重要</Text></View>
+          <View style={[styles.badge, { backgroundColor: colors.primarySoft }]}><Text style={{ color: colors.primaryDark, fontWeight: '800', fontSize: 9.5 }}>稳定比极端更重要</Text></View>
         </View>
         <ProgressBar value={complianceRate / 100} />
         <View style={styles.calendarRow}>
@@ -61,15 +61,15 @@ export function TrendsScreen() {
         <Text style={[styles.ruleHint, { color: colors.textMuted }]}>减脂期不要求“吃满”目标：当天有饮食记录且总摄入 ≤ 目标的105%，即视为达标。</Text>
       </Card>
 
-      <SectionTitle title={`减脂里程碑 · 已解锁 ${unlockedCount}/${achievements.length}`} action={<Text style={{ color: colors.textMuted, fontSize: 10 }}>左右滑动</Text>} />
+      <SectionTitle compact title={`减脂里程碑 · 已解锁 ${unlockedCount}/${achievements.length}`} action={<Text style={{ color: colors.textMuted, fontSize: 9 }}>左右滑动</Text>} />
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.achievementList}>
         {achievements.map(item => (
           <View key={item.id} style={[styles.achievementCard, { backgroundColor: item.unlocked ? colors.primarySoft : colors.surface, borderColor: item.unlocked ? colors.primary : colors.border }]}>
             <View style={[styles.achievementIcon, { backgroundColor: item.unlocked ? colors.surface : colors.surfaceMuted }]}>
-              <Text style={{ fontSize: 25 }}>{item.emoji}</Text>
+              <Text style={{ fontSize: 20 }}>{item.emoji}</Text>
             </View>
             <Text style={[styles.achievementName, { color: colors.text }]}>{item.name}</Text>
-            <Text style={[styles.achievementDetail, { color: colors.textMuted }]}>{item.detail}</Text>
+            <Text numberOfLines={2} style={[styles.achievementDetail, { color: colors.textMuted }]}>{item.detail}</Text>
             <Text style={[styles.achievementProgress, { color: item.unlocked ? colors.primaryDark : colors.textMuted }]}>{item.unlocked ? '已解锁 ✓' : item.progress}</Text>
           </View>
         ))}
@@ -90,8 +90,8 @@ export function TrendsScreen() {
         achievements={achievements}
       />
 
-      <SectionTitle title="阶段提示" />
-      <Card style={{ gap: 10 }}>
+      <SectionTitle compact title="阶段提示" />
+      <Card style={[styles.compactCard, { gap: 6 }]}>
         <Text style={[styles.insightTitle, { color: colors.text }]}>🌱 {buildInsight(profile.targetWeightKg, latest?.weightKg, complianceRate)}</Text>
         <Text style={[styles.insightBody, { color: colors.textMuted }]}>建议每周固定时间、相似状态下测量体重和腰围，用 2–4 周趋势判断方案是否需要调整。</Text>
       </Card>
@@ -251,9 +251,9 @@ function Stat({ label, value, accent = false }: { label: string; value: string; 
 
 function LineChart({ data, labels, width, color }: { data: number[]; labels: string[]; width: number; color: string }) {
   const colors = useColors();
-  const height = 180;
-  const paddingX = 16;
-  const paddingY = 27;
+  const height = 130;
+  const paddingX = 14;
+  const paddingY = 20;
   const min = Math.min(...data) - 0.5;
   const max = Math.max(...data) + 0.5;
   const points = useMemo(() => data.map((value, index) => {
@@ -263,14 +263,17 @@ function LineChart({ data, labels, width, color }: { data: number[]; labels: str
   }), [data, width, min, max]);
   return (
     <Svg width={width} height={height}>
-      {[0, 1, 2].map(index => <Line key={index} x1="0" x2={width} y1={paddingY + index * 55} y2={paddingY + index * 55} stroke={colors.border} strokeWidth="1" />)}
-      <Polyline points={points.map(item => `${item.x},${item.y}`).join(' ')} fill="none" stroke={color} strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" />
+      {[0, 1, 2].map(index => {
+        const y = paddingY + index * ((height - paddingY * 2) / 2);
+        return <Line key={index} x1="0" x2={width} y1={y} y2={y} stroke={colors.border} strokeWidth="1" />;
+      })}
+      <Polyline points={points.map(item => `${item.x},${item.y}`).join(' ')} fill="none" stroke={color} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
       {points.map((item, index) => (
-        <Circle key={index} cx={item.x} cy={item.y} r="4" fill={colors.surface} stroke={color} strokeWidth="3" />
+        <Circle key={index} cx={item.x} cy={item.y} r="3" fill={colors.surface} stroke={color} strokeWidth="2.5" />
       ))}
-      <SvgText x={paddingX} y={height - 2} fill={colors.textMuted} fontSize="9">{labels[0]}</SvgText>
-      <SvgText x={width - paddingX - 28} y={height - 2} fill={colors.textMuted} fontSize="9">{labels[labels.length - 1]}</SvgText>
-      <SvgText x={paddingX} y={16} fill={colors.text} fontSize="11" fontWeight="700">{data[data.length - 1].toFixed(1)} kg</SvgText>
+      <SvgText x={paddingX} y={height - 1} fill={colors.textMuted} fontSize="8">{labels[0]}</SvgText>
+      <SvgText x={width - paddingX - 25} y={height - 1} fill={colors.textMuted} fontSize="8">{labels[labels.length - 1]}</SvgText>
+      <SvgText x={paddingX} y={14} fill={colors.text} fontSize="10" fontWeight="700">{data[data.length - 1].toFixed(1)} kg</SvgText>
     </Svg>
   );
 }
@@ -284,25 +287,27 @@ function buildInsight(target: number, current?: number, rate?: number) {
 }
 
 const styles = StyleSheet.create({
+  screen: { paddingHorizontal: 16, paddingTop: 9, gap: 11 },
+  compactCard: { padding: 12, borderRadius: 17 },
   statsRow: { flexDirection: 'row', gap: 8 },
-  stat: { flex: 1, padding: 12, borderRadius: 16, borderWidth: 1, gap: 5 },
-  statLabel: { fontSize: 9, fontWeight: '700' },
-  statValue: { fontSize: 15, fontWeight: '900' },
+  stat: { flex: 1, padding: 9, borderRadius: 13, borderWidth: 1, gap: 2 },
+  statLabel: { fontSize: 8.5, fontWeight: '700' },
+  statValue: { fontSize: 13, fontWeight: '900' },
   complianceHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
-  complianceNumber: { fontSize: 31, fontWeight: '900' },
-  complianceDetail: { fontSize: 10, marginTop: 3 },
-  badge: { borderRadius: 999, paddingHorizontal: 11, paddingVertical: 7 },
-  calendarRow: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
-  calendarDot: { width: 14, height: 14, borderRadius: 4 },
-  ruleHint: { fontSize: 10.5, lineHeight: 16 },
-  achievementList: { gap: 10, paddingRight: 4 },
-  achievementCard: { width: 164, minHeight: 180, borderRadius: 19, borderWidth: 1, padding: 14 },
-  achievementIcon: { width: 46, height: 46, borderRadius: 15, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
-  achievementName: { fontSize: 14, fontWeight: '900' },
-  achievementDetail: { fontSize: 10.5, lineHeight: 16, marginTop: 5, flex: 1 },
-  achievementProgress: { fontSize: 10.5, fontWeight: '800', marginTop: 10 },
-  shareButton: { minHeight: 45, borderRadius: 15, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  shareButtonText: { fontSize: 12, fontWeight: '900' },
+  complianceNumber: { fontSize: 24, fontWeight: '900' },
+  complianceDetail: { fontSize: 9, marginTop: 1 },
+  badge: { borderRadius: 999, paddingHorizontal: 9, paddingVertical: 5 },
+  calendarRow: { flexDirection: 'row', gap: 5, flexWrap: 'wrap' },
+  calendarDot: { width: 11, height: 11, borderRadius: 3 },
+  ruleHint: { fontSize: 9.5, lineHeight: 14 },
+  achievementList: { gap: 8, paddingRight: 4 },
+  achievementCard: { width: 140, minHeight: 140, borderRadius: 15, borderWidth: 1, padding: 11 },
+  achievementIcon: { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
+  achievementName: { fontSize: 12.5, fontWeight: '900' },
+  achievementDetail: { fontSize: 9.5, lineHeight: 13, marginTop: 3, flex: 1 },
+  achievementProgress: { fontSize: 9.5, fontWeight: '800', marginTop: 6 },
+  shareButton: { minHeight: 38, borderRadius: 13, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  shareButtonText: { fontSize: 11, fontWeight: '900' },
   shareModalBackdrop: { flex: 1, backgroundColor: '#0B1711CC', alignItems: 'center', justifyContent: 'center', padding: 20 },
   shareModalContent: { width: '100%', maxWidth: 380, alignItems: 'center', gap: 11 },
   shareCard: { width: '100%', borderRadius: 28, padding: 23, overflow: 'hidden' },
@@ -328,6 +333,6 @@ const styles = StyleSheet.create({
   shareModalHint: { fontSize: 10.5, fontWeight: '700' },
   shareModalActions: { width: '100%', flexDirection: 'row', gap: 10 },
   shareModalButton: { minHeight: 45, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  insightTitle: { fontSize: 15, fontWeight: '800', lineHeight: 22 },
-  insightBody: { fontSize: 12, lineHeight: 19 },
+  insightTitle: { fontSize: 13, fontWeight: '800', lineHeight: 18 },
+  insightBody: { fontSize: 10.5, lineHeight: 16 },
 });
