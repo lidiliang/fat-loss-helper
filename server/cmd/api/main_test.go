@@ -59,6 +59,7 @@ func TestAIRoutesRequireJWT(t *testing.T) {
 		{http.MethodGet, "/api/v1/ai/daily-plan?date=2026-08-13"},
 		{http.MethodPost, "/api/v1/ai/daily-plan"},
 		{http.MethodGet, "/api/v1/ai/history"},
+		{http.MethodGet, "/api/v1/ai/config"},
 		{http.MethodPost, "/api/v1/ai/food-estimate"},
 		{http.MethodPost, "/api/v1/ai/ask"},
 	}

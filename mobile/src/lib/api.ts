@@ -1,4 +1,5 @@
 import Constants from 'expo-constants';
+import { getAIModelOverride } from './aiModel';
 import { AIDailyContext, AIFoodEstimate, AIHistoryItem, AISummaryRecord, BackupSnapshot, SessionUser } from '../types';
 
 export interface AuthResponse {
@@ -17,6 +18,7 @@ function resolveApiUrl() {
 export const API_URL = resolveApiUrl();
 
 export async function apiRequest<T>(path: string, options: RequestInit = {}, token?: string, timeoutMs = 10000): Promise<T> {
+  const model = path.startsWith('/ai/') && path !== '/ai/config' ? await getAIModelOverride() : '';
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -25,6 +27,7 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}, tok
       signal: controller.signal,
       headers: {
         'Content-Type': 'application/json',
+        ...(model ? { 'X-AI-Model': model } : {}),
         ...options.headers,
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
@@ -103,4 +106,8 @@ export function askNutritionAI(token: string, question: string, context: AIDaily
     method: 'POST',
     body: JSON.stringify({ question, context }),
   }, token, 60000);
+}
+
+export function getAIConfig(token: string) {
+  return apiRequest<{ defaultModel: string }>('/ai/config', {}, token);
 }

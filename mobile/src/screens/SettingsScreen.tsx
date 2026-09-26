@@ -5,7 +5,8 @@ import { Alert, Linking, Pressable, ScrollView, StyleSheet, Switch, Text, View }
 import { AppText, Card, Chip, Field, Header, PrimaryButton, Screen, SectionTitle } from '../components/ui';
 import { ACTIVITY_LEVELS, FATTY_LIVER_LEVELS } from '../data/seed';
 import { calculateGoals } from '../lib/calculations';
-import { API_URL } from '../lib/api';
+import { API_URL, getAIConfig } from '../lib/api';
+import { getAIModelOverride, saveAIModelOverride } from '../lib/aiModel';
 import { getSyncStatus } from '../lib/database';
 import {
   getReminderDiagnostics,
@@ -100,6 +101,8 @@ export function SettingsScreen() {
         <SectionTitle title="本地提醒" />
         <ReminderEditor settings={app.reminders} onExpand={scrollReminderToTop} />
       </View>
+
+      <AIModelEditor />
 
       <SectionTitle title="数据备份" />
       <Card style={{ gap: 15 }}>
@@ -417,3 +420,44 @@ const styles = StyleSheet.create({
   medicalNote: { fontSize: 10, lineHeight: 17 },
   infoBox: { padding: 12, borderRadius: 13 },
 });
+
+
+function AIModelEditor() {
+  const { token } = useAuth();
+  const colors = useColors();
+  const [model, setModel] = useState('');
+  const [defaultModel, setDefaultModel] = useState('');
+  const [ready, setReady] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  useEffect(() => {
+    let active = true;
+    getAIModelOverride().then(value => {
+      if (active) { setModel(value); setReady(true); }
+    }).catch(() => { if (active) setLoadError('无法读取本机模型设置，请重新打开设置页'); });
+    if (token) getAIConfig(token).then(config => {
+      if (active) setDefaultModel(config.defaultModel);
+    }).catch(() => { if (active) setLoadError('无法读取服务端默认模型；留空仍会使用服务端 AI_MODEL'); });
+    return () => { active = false; };
+  }, [token]);
+  const save = async () => {
+    setSaving(true);
+    try {
+      await saveAIModelOverride(model);
+      setModel(model.trim());
+      Alert.alert('已保存', model.trim() ? `后续 AI 请求使用 ${model.trim()}` : '后续 AI 请求使用服务端 AI_MODEL 配置');
+    } catch (error) {
+      Alert.alert('保存失败', error instanceof Error ? error.message : '请重试');
+    } finally { setSaving(false); }
+  };
+  return <>
+    <SectionTitle title="AI 模型" />
+    <Card style={{ gap: 12 }}>
+      <Field label="大模型名称（可手动输入）" value={model} onChangeText={setModel}
+        placeholder={defaultModel || '留空使用服务端 AI_MODEL'} autoCapitalize="none" autoCorrect={false} />
+      <Text style={{ color: colors.textMuted }}>服务端默认：{defaultModel || '读取中'}。留空并保存可恢复默认；此设置保存在本机，适用于所有 AI 功能。模型需由当前服务端接口支持。</Text>
+      {loadError ? <Text style={{ color: colors.textMuted }}>{loadError}</Text> : null}
+      <PrimaryButton label="保存模型设置" onPress={save} loading={saving} disabled={!ready} />
+    </Card>
+  </>;
+}

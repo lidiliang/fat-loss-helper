@@ -139,7 +139,7 @@ docker run -d \
 JWT_SECRET=填写至少32位且后续保持不变的随机密钥
 AI_API_KEY=填写你的DeepSeek_API_Key
 AI_BASE_URL=https://api.deepseek.com
-AI_MODEL=deepseek-v4-flash
+AI_MODEL=deepseek-flash
 AI_DAILY_LIMIT=50
 ```
 
@@ -203,7 +203,7 @@ docker-compose down -v
 docker system prune --volumes
 ```
 
-如果旧 `.env` 中仍是 `AI_MODEL=deepseek-chat`，请先改为 `AI_MODEL=deepseek-v4-flash` 再重建 API 容器。重建后可只查看模型名，不输出 API Key：
+如果旧 `.env` 中仍是 `AI_MODEL=deepseek-chat`，请先改为 `AI_MODEL=deepseek-flash` 再重建 API 容器。重建后可只查看模型名，不输出 API Key：
 
 ```bash
 docker exec qingzhi-api printenv AI_MODEL
@@ -211,7 +211,7 @@ docker exec qingzhi-api printenv AI_MODEL
 
 容器之间通过 `qingzhi-network` 通信，因此 API 使用数据库容器名 `qingzhi-postgres:5432`，不能写成 `127.0.0.1:5433`。后者只用于从宿主机直接访问数据库。
 
-AI Key 只能配置在服务端环境变量或未提交的根目录 `.env` 中，不能写入移动端、APK、源码或 Git。未配置 `AI_API_KEY` 时，登录、记录和备份仍可正常使用，AI 接口会返回明确的未配置提示。默认使用 `https://api.deepseek.com` 的 `deepseek-v4-flash`；这是 DeepSeek 官方当前公开的 OpenAI 兼容 API 模型 ID，不应继续使用旧的 `deepseek-chat`。可在 [DeepSeek Models & Pricing](https://api-docs.deepseek.com/quick_start/pricing/) 核对最新模型标识。四类 AI 功能共享每个账号北京时间自然日 50 次限额，失败调用也会计入，以防反复重试耗尽上游额度。同一天的“今日控制方案”会按前两日数据版本复用缓存，记录变化后才重新调用模型；每日总结和营养问答可在 App 中按类型查看历史。
+AI Key 只能配置在服务端环境变量或未提交的根目录 `.env` 中，不能写入移动端、APK、源码或 Git。未配置 `AI_API_KEY` 时，登录、记录和备份仍可正常使用，AI 接口会返回明确的未配置提示。默认使用 `https://api.deepseek.com` 的 `deepseek-flash`，实际模型名称需由你配置的上游接口支持。App 的“设置与数据 → AI 模型”支持手动输入模型名称；留空并保存时使用服务端 `.env` 的 `AI_MODEL`。自定义名称仅保存在本机，通过请求传递，不修改服务端默认值。总结和计划缓存按模型隔离。四类 AI 功能共享每个账号北京时间自然日 50 次限额，失败调用也会计入，以防反复重试耗尽上游额度。同一天的“今日控制方案”会按前两日数据版本复用缓存，记录变化后才重新调用模型；每日总结和营养问答可在 App 中按类型查看历史。
 
 如果需要在宿主机使用 `go run` 调试后端：
 

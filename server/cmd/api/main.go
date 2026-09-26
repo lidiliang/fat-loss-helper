@@ -101,7 +101,7 @@ func loadConfig() config {
 		AllowOrigin:  envOr("ALLOW_ORIGIN", "*"),
 		AIBaseURL:    envOr("AI_BASE_URL", "https://api.deepseek.com"),
 		AIAPIKey:     strings.TrimSpace(os.Getenv("AI_API_KEY")),
-		AIModel:      envOr("AI_MODEL", "deepseek-v4-flash"),
+		AIModel:      envOr("AI_MODEL", "deepseek-flash"),
 		AIDailyLimit: envIntOr("AI_DAILY_LIMIT", 50),
 	}
 	if len(cfg.JWTSecret) < 24 {
@@ -181,13 +181,14 @@ func (s *server) routes(allowOrigin string) *gin.Engine {
 	authorized.GET("/me", s.me)
 	authorized.POST("/sync", s.uploadSnapshot)
 	authorized.GET("/sync/latest", s.latestSnapshot)
-	authorized.GET("/ai/daily-summary", s.latestDailySummary)
-	authorized.POST("/ai/daily-summary", s.generateDailySummary)
-	authorized.GET("/ai/daily-plan", s.latestDailyPlan)
-	authorized.POST("/ai/daily-plan", s.generateDailyPlan)
+	authorized.GET("/ai/daily-summary", s.withAIModel((*server).latestDailySummary))
+	authorized.POST("/ai/daily-summary", s.withAIModel((*server).generateDailySummary))
+	authorized.GET("/ai/daily-plan", s.withAIModel((*server).latestDailyPlan))
+	authorized.POST("/ai/daily-plan", s.withAIModel((*server).generateDailyPlan))
 	authorized.GET("/ai/history", s.aiHistory)
-	authorized.POST("/ai/food-estimate", s.estimateFood)
-	authorized.POST("/ai/ask", s.askNutritionAssistant)
+	authorized.GET("/ai/config", s.aiConfig)
+	authorized.POST("/ai/food-estimate", s.withAIModel((*server).estimateFood))
+	authorized.POST("/ai/ask", s.withAIModel((*server).askNutritionAssistant))
 	return router
 }
 
@@ -200,7 +201,7 @@ func cors(origin string) gin.HandlerFunc {
 		}
 		c.Header("Access-Control-Allow-Origin", allowed)
 		c.Header("Vary", "Origin")
-		c.Header("Access-Control-Allow-Headers", "Authorization, Content-Type")
+		c.Header("Access-Control-Allow-Headers", "Authorization, Content-Type, X-AI-Model")
 		c.Header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		if c.Request.Method == http.MethodOptions {
 			c.AbortWithStatus(http.StatusNoContent)

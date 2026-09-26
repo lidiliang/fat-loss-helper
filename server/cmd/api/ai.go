@@ -606,7 +606,7 @@ func (s *server) failAIInteraction(ctx context.Context, id uuid.UUID, cause erro
 
 func (s *server) loadLatestAIRecord(ctx context.Context, userID uuid.UUID, interactionType, day string) (aiRecord, error) {
 	var record aiRecord
-	err := s.db.QueryRow(ctx, `SELECT id,COALESCE(response_text,''),COALESCE(response_json,'null'::jsonb),COALESCE(context_version,''),created_at,prompt_tokens,completion_tokens,total_tokens FROM ai_interactions WHERE user_id=$1 AND interaction_type=$2 AND day_key=$3 AND status='success' ORDER BY created_at DESC LIMIT 1`, userID, interactionType, day).Scan(&record.ID, &record.ResponseText, &record.ResponseJSON, &record.ContextVersion, &record.CreatedAt, &record.PromptTokens, &record.CompletionTokens, &record.TotalTokens)
+	err := s.db.QueryRow(ctx, `SELECT id,COALESCE(response_text,''),COALESCE(response_json,'null'::jsonb),COALESCE(context_version,''),created_at,prompt_tokens,completion_tokens,total_tokens FROM ai_interactions WHERE user_id=$1 AND interaction_type=$2 AND day_key=$3 AND model=$4 AND status='success' ORDER BY created_at DESC LIMIT 1`, userID, interactionType, day, s.ai.model).Scan(&record.ID, &record.ResponseText, &record.ResponseJSON, &record.ContextVersion, &record.CreatedAt, &record.PromptTokens, &record.CompletionTokens, &record.TotalTokens)
 	return record, err
 }
 
